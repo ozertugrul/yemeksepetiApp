@@ -7,9 +7,8 @@ import FirebaseAuth
 /// Build scheme'e göre ya da remote config ile değiştirilebilir.
 enum APIConfig {
     static var baseURL: String {
-        // Production'da Railway/Render URL'ini girin
         ProcessInfo.processInfo.environment["API_BASE_URL"]
-            ?? "https://your-app.up.railway.app/api/v1"
+            ?? "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
     }
 
     /// false yapılırsa tüm çağrılar Firestore'a (DataService) düşer — rollback
