@@ -26,7 +26,12 @@ async def get_me(
     repo = SQLUserRepository(db)
     u = await repo.get_by_id(user.uid)
     if not u:
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+        # Firebase'de kayıtlı ama PostgreSQL'de yok — otomatik oluştur
+        u = await repo.upsert({
+            "id": user.uid,
+            "email": user.email or f"{user.uid}@unknown.user",
+            "role": "user",
+        })
     return UserOut(
         id=u.id, email=u.email, display_name=u.display_name,
         role=u.role, city=u.city, phone=u.phone,

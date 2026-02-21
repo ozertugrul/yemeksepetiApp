@@ -7,12 +7,24 @@ final class OrderService: ObservableObject {
     private let ordersCollection = "orders"
     private let reviewsCollection = "reviews"
     private var listeners: [ListenerRegistration] = []
+    private let orderAPI = OrderAPIService()
 
     deinit { listeners.forEach { $0.remove() } }
 
     // MARK: - Place Order
 
     func placeOrder(_ order: Order, completion: @escaping (Result<Order, Error>) -> Void) {
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    let placed = try await orderAPI.placeOrder(order)
+                    DispatchQueue.main.async { completion(.success(placed)) }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+            return
+        }
         do {
             try db.collection(ordersCollection).document(order.id).setData(from: order) { error in
                 DispatchQueue.main.async {
@@ -28,6 +40,18 @@ final class OrderService: ObservableObject {
     // MARK: - Fetch User Orders (one-shot)
 
     func fetchUserOrders(userId: String, completion: @escaping ([Order]) -> Void) {
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    let orders = try await orderAPI.fetchMyOrders()
+                    DispatchQueue.main.async { completion(orders) }
+                } catch {
+                    print("[OrderService] API fetchUserOrders hata: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion([]) }
+                }
+            }
+            return
+        }
         db.collection(ordersCollection)
             .whereField("userId", isEqualTo: userId)
             .getDocuments { snapshot, _ in
@@ -89,6 +113,18 @@ final class OrderService: ObservableObject {
     // MARK: - Fetch Restaurant Orders
 
     func fetchRestaurantOrders(restaurantId: String, completion: @escaping ([Order]) -> Void) {
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    let orders = try await orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)
+                    DispatchQueue.main.async { completion(orders) }
+                } catch {
+                    print("[OrderService] API fetchRestaurantOrders hata: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion([]) }
+                }
+            }
+            return
+        }
         // No .order(by:) — avoids composite index requirement. Sort client-side.
         db.collection(ordersCollection)
             .whereField("restaurantId", isEqualTo: restaurantId)
@@ -133,6 +169,17 @@ final class OrderService: ObservableObject {
         status: OrderStatus,
         completion: @escaping (Error?) -> Void
     ) {
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    _ = try await orderAPI.updateStatus(orderId: orderId, status: status)
+                    DispatchQueue.main.async { completion(nil) }
+                } catch {
+                    DispatchQueue.main.async { completion(error) }
+                }
+            }
+            return
+        }
         db.collection(ordersCollection).document(orderId).updateData([
             "status": status.rawValue,
             "updatedAt": Timestamp(date: Date())

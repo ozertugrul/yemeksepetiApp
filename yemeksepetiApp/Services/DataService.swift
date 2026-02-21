@@ -4,24 +4,48 @@ import FirebaseFirestore
 
 class DataService: ObservableObject {
     private let db = Firestore.firestore()
+    private let restaurantAPI = RestaurantAPIService()
+    private let adminAPI = AdminAPIService()
     
     // MARK: - Restaurants
     
     func fetchRestaurants(completion: @escaping ([Restaurant]) -> Void) {
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    let list = try await restaurantAPI.fetchActive()
+                    DispatchQueue.main.async { completion(list) }
+                } catch {
+                    print("[DataService] API fetchRestaurants hata: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion([]) }
+                }
+            }
+            return
+        }
         db.collection("restaurants").whereField("isActive", isEqualTo: true).getDocuments { snapshot, error in
             guard let documents = snapshot?.documents, error == nil else {
                 print("Error fetching restaurants: \(error?.localizedDescription ?? "")")
                 completion([])
                 return
             }
-            
             let restaurants = documents.compactMap { try? $0.data(as: Restaurant.self) }
             completion(restaurants)
         }
     }
     
     func getAllRestaurantsForAdmin(completion: @escaping ([Restaurant]) -> Void) {
-        // Admin sees all (including inactive)
+        guard !APIConfig.useSQLBackend else {
+            Task {
+                do {
+                    let list = try await adminAPI.fetchAllRestaurants()
+                    DispatchQueue.main.async { completion(list) }
+                } catch {
+                    print("[DataService] API getAllRestaurants hata: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion([]) }
+                }
+            }
+            return
+        }
         db.collection("restaurants").getDocuments { snapshot, error in
             guard let documents = snapshot?.documents else { return }
             let restaurants = documents.compactMap { try? $0.data(as: Restaurant.self) }

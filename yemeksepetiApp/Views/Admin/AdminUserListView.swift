@@ -125,7 +125,7 @@ struct AdminUserListView: View {
     private func loadAllUsers() {
         isLoading = true
         errorMessage = nil
-        viewModel.authService.fetchAllUsers { users, error in
+        viewModel.fetchAllUsers { users, error in
             isLoading = false
             if let error {
                 errorMessage = error
@@ -135,7 +135,7 @@ struct AdminUserListView: View {
     }
 
     func updateUserRole(uid: String, role: UserRole) {
-        viewModel.authService.updateUserRole(uid: uid, role: role) { error in
+        viewModel.updateUserRole(uid: uid, role: role) { error in
             if let error {
                 alertTitle = "Hata: \(error.localizedDescription)"
             } else {
@@ -169,7 +169,7 @@ struct AdminUserListView: View {
     }
 
     func deleteUser(uid: String) {
-        viewModel.authService.deleteUser(uid: uid) { error in
+        viewModel.deleteUser(uid: uid) { error in
             if let error {
                 alertTitle = "Silme hatası: \(error.localizedDescription)"
             } else {

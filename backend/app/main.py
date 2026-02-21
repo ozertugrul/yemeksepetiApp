@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.core.database import engine
 from app.models import orm_models  # ORM tablolarını kaydet
-from app.routers import orders, recommendations, restaurants, users
+from app.routers import admin, orders, recommendations, restaurants, users
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ app.include_router(restaurants.router, prefix=PREFIX)
 app.include_router(orders.router, prefix=PREFIX)
 app.include_router(users.router, prefix=PREFIX)
 app.include_router(recommendations.router, prefix=PREFIX)
+app.include_router(admin.router, prefix=PREFIX)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

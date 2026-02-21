@@ -209,6 +209,16 @@ class SQLUserRepository(UserRepositoryBase):
     def __init__(self, session: AsyncSession):
         self.db = session
 
+    async def get_all(self) -> List[UserORM]:
+        result = await self.db.execute(select(UserORM).order_by(UserORM.email))
+        return result.scalars().all()
+
+    async def delete_by_id(self, user_id: str) -> bool:
+        result = await self.db.execute(
+            delete(UserORM).where(UserORM.id == user_id)
+        )
+        return result.rowcount > 0
+
     async def get_by_id(self, user_id: str) -> Optional[UserORM]:
         result = await self.db.execute(
             select(UserORM).where(UserORM.id == user_id)

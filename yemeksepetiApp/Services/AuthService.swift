@@ -3,7 +3,23 @@ import FirebaseFirestore
 import Foundation
 import Combine
 
-// MARK: - AuthError
+// MARK: - PostgreSQL Sync
+
+/// Firebase login/register sonrası kullanıcıyı PostgreSQL'de otomatik oluşturur.
+/// Hata non-fatal'dir — iOS aktarımı beklemeden devam eder.
+private func syncUserToPostgreSQL() {
+    guard APIConfig.useSQLBackend else { return }
+    Task {
+        do {
+            _ = try await APIClient.shared.get(APIUserProfile.self, path: "/users/me")
+            print("[AuthService] PostgreSQL sync OK")
+        } catch APIError.notFound {
+            print("[AuthService] PostgreSQL'de kullanıcı yok (auto-upsert başarısız)")
+        } catch {
+            print("[AuthService] PostgreSQL sync non-fatal hata: \(error.localizedDescription)")
+        }
+    }
+}
 
 enum AuthError: LocalizedError {
     case missingUID
@@ -155,6 +171,7 @@ final class AuthService: ObservableObject {
                 DispatchQueue.main.async { completion(.failure(AuthError.missingUID)) }
                 return
             }
+            syncUserToPostgreSQL()
             self.fetchUserProfile(uid: uid, completion: completion)
         }
     }
@@ -176,6 +193,7 @@ final class AuthService: ObservableObject {
                 return
             }
             let newUser = AppUser(id: uid, email: email, role: .user, managedRestaurantId: nil)
+            syncUserToPostgreSQL()
             self.saveUserDocument(newUser, completion: completion)
         }
     }

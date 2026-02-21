@@ -9,6 +9,12 @@ class AppViewModel: ObservableObject {
     @Published var couponService = CouponService()
     @Published var selectedTab: Int = 0
 
+    // ── API Servisler (SQL backend aktifken kullanılır) ───────────────────────
+    let userAPI = UserAPIService()
+    let restaurantAPI = RestaurantAPIService()
+    let recommendationAPI = RecommendationService()
+    let adminAPI = AdminAPIService()
+
     private var cancellables = Set<AnyCancellable>()
     /// Tracks the last known user ID to detect account switches
     private var lastUserId: String?
@@ -33,7 +39,6 @@ class AppViewModel: ObservableObject {
                 guard let self else { return }
                 let newId = user?.id
                 if newId != self.lastUserId {
-                    // User logged out (nil) or switched to a different account
                     self.cart.clear()
                 }
                 self.lastUserId = newId
@@ -41,14 +46,56 @@ class AppViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // Helper to check if current user is admin
-    var isAdmin: Bool {
-        return authService.userRole == .superAdmin
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    var isAdmin: Bool { authService.userRole == .superAdmin }
+    var isStoreOwner: Bool { authService.userRole == .storeOwner }
+
+    // ── Admin: Kullanıcı yönetimi ─────────────────────────────────────────────
+
+    func fetchAllUsers(completion: @escaping ([AppUser], String?) -> Void) {
+        guard APIConfig.useSQLBackend else {
+            authService.fetchAllUsers(completion: completion)
+            return
+        }
+        Task {
+            do {
+                let users = try await adminAPI.fetchAllUsers()
+                DispatchQueue.main.async { completion(users, nil) }
+            } catch {
+                DispatchQueue.main.async { completion([], error.localizedDescription) }
+            }
+        }
     }
 
-    // Helper to check if current user is store owner
-    var isStoreOwner: Bool {
-        return authService.userRole == .storeOwner
+    func updateUserRole(uid: String, role: UserRole, completion: @escaping (Error?) -> Void) {
+        guard APIConfig.useSQLBackend else {
+            authService.updateUserRole(uid: uid, role: role, completion: completion)
+            return
+        }
+        Task {
+            do {
+                try await adminAPI.updateUserRole(uid: uid, role: role)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
+    }
+
+    func deleteUser(uid: String, completion: @escaping (Error?) -> Void) {
+        guard APIConfig.useSQLBackend else {
+            authService.deleteUser(uid: uid, completion: completion)
+            return
+        }
+        Task {
+            do {
+                try await adminAPI.deleteUser(uid: uid)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
     }
 }
 
