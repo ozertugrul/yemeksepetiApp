@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: yemeksepeti-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Render dashboard'dan elle gir (secret)
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false          # Render dashboard'dan elle gir (secret)
+      - key: FIREBASE_PROJECT_ID
+        value: yemeksepeti-625e2
+      - key: USE_SQL_BACKEND
+        value: "true"
+      - key: USE_EMBEDDINGS
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: API_PREFIX
+        value: /api/v1
+      - key: EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: EMBEDDING_DIM
+        value: "384"
+    healthCheckPath: /health

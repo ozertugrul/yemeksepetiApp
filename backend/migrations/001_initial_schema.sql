@@ -1,9 +1,6 @@
-"""
-migrations/001_initial_schema.sql
-----------------------------------
-Supabase SQL Editor'a yapıştır ve çalıştır.
-Idempotent — birden çok kez çalıştırmak güvenli (IF NOT EXISTS).
-"""
+-- migrations/001_initial_schema.sql
+-- Supabase SQL Editor'a yapıştır ve çalıştır.
+-- Idempotent — birden çok kez çalıştırmak güvenli (IF NOT EXISTS).
 
 -- 1. pgvector uzantısını etkinleştir
 CREATE EXTENSION IF NOT EXISTS vector;

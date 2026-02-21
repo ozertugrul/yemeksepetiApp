@@ -11,6 +11,8 @@ engine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,
     echo=settings.debug,
+    # Transaction pooler (pgbouncer) PREPARE desteklemez
+    connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
