@@ -1,26 +1,42 @@
 """
 Supabase'e SQL migration uygula (asyncpg ile, psql gerektirmez).
 Çalıştır: python3 scripts/apply_migration.py
+Kimlik bilgileri .env dosyasından okunur (DATABASE_URL).
 """
 import asyncio
 import asyncpg
 import os
+import re
 from pathlib import Path
+from dotenv import load_dotenv
 
-HOST = "aws-1-eu-west-1.pooler.supabase.com"
-PORT = 6543
-USER = "postgres.wzyaeoqdtpvkjxorqnra"
-PASSWORD = "REDACTED_FROM_HISTORY"
-DATABASE = "postgres"
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 SQL_FILE = Path(__file__).parent.parent / "migrations" / "001_initial_schema.sql"
 
 
+def _parse_db_url(url: str):
+    """postgresql+asyncpg://user:pass@host:port/db  → bileşenlerine ayır."""
+    url = url.replace("postgresql+asyncpg://", "").replace("postgresql://", "")
+    m = re.match(r"([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)", url)
+    if not m:
+        raise ValueError(f"DATABASE_URL parse edilemedi: {url}")
+    return m.group(1), m.group(2), m.group(3), int(m.group(4)), m.group(5)
+
+
 async def main():
-    print("Supabase'e bağlanılıyor…")
+    db_url = os.getenv("DATABASE_URL", "")
+    if not db_url:
+        raise SystemExit("Hata: DATABASE_URL env var eksik (.env dosyasını kontrol et)")
+
+    user, password, host, port, database = _parse_db_url(
+        db_url.replace("%24", "$").replace("%23", "#")
+    )
+
+    print(f"Supabase'e bağlanılıyor → {host}:{port}/{database} …")
     conn = await asyncpg.connect(
-        host=HOST, port=PORT, user=USER,
-        password=PASSWORD, database=DATABASE, ssl="require",
+        host=host, port=port, user=user,
+        password=password, database=database, ssl="require",
         statement_cache_size=0,
     )
     print("Bağlantı başarılı.")
