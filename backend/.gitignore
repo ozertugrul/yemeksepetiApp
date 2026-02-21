@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+env/
+venv/
+.venv/
+
+# Environment
+.env
+.env.local
+
+# Model cache (HuggingFace)
+.cache/
+huggingface/
+
+# Logs
+*.log
+
+# Secrets
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
