@@ -1,0 +1,698 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		99818DFE2F44488D00B5BA65 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 99818DFD2F44488D00B5BA65 /* FirebaseAuth */; };
+		99818E002F44489600B5BA65 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818DFF2F44489600B5BA65 /* FirebaseFirestore */; };
+		99818E022F44489D00B5BA65 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E012F44489D00B5BA65 /* FirebaseCore */; };
+		99818E042F4448BC00B5BA65 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E032F4448BC00B5BA65 /* FirebaseAuth */; };
+		99818E062F4448C100B5BA65 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E052F4448C100B5BA65 /* FirebaseCore */; };
+		99818E082F4448C700B5BA65 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E072F4448C700B5BA65 /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		99818D332F43AAC400B5BA65 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 99818D1B2F43AABA00B5BA65 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 99818D222F43AABA00B5BA65;
+			remoteInfo = yemeksepetiApp;
+		};
+		99818D3D2F43AAC400B5BA65 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 99818D1B2F43AABA00B5BA65 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 99818D222F43AABA00B5BA65;
+			remoteInfo = yemeksepetiApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		99818D232F43AABA00B5BA65 /* yemeksepetiApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = yemeksepetiApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		99818D322F43AAC400B5BA65 /* yemeksepetiAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = yemeksepetiAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		99818D3C2F43AAC400B5BA65 /* yemeksepetiAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = yemeksepetiAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		99818D252F43AABA00B5BA65 /* yemeksepetiApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = yemeksepetiApp;
+			sourceTree = "<group>";
+		};
+		99818D352F43AAC400B5BA65 /* yemeksepetiAppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = yemeksepetiAppTests;
+			sourceTree = "<group>";
+		};
+		99818D3F2F43AAC400B5BA65 /* yemeksepetiAppUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = yemeksepetiAppUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		99818D202F43AABA00B5BA65 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99818DFE2F44488D00B5BA65 /* FirebaseAuth in Frameworks */,
+				99818E022F44489D00B5BA65 /* FirebaseCore in Frameworks */,
+				99818E002F44489600B5BA65 /* FirebaseFirestore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D2F2F43AAC400B5BA65 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99818E062F4448C100B5BA65 /* FirebaseCore in Frameworks */,
+				99818E042F4448BC00B5BA65 /* FirebaseAuth in Frameworks */,
+				99818E082F4448C700B5BA65 /* FirebaseFirestore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D392F43AAC400B5BA65 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		99818D1A2F43AABA00B5BA65 = {
+			isa = PBXGroup;
+			children = (
+				99818D252F43AABA00B5BA65 /* yemeksepetiApp */,
+				99818D352F43AAC400B5BA65 /* yemeksepetiAppTests */,
+				99818D3F2F43AAC400B5BA65 /* yemeksepetiAppUITests */,
+				99818DFC2F44488D00B5BA65 /* Frameworks */,
+				99818D242F43AABA00B5BA65 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		99818D242F43AABA00B5BA65 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				99818D232F43AABA00B5BA65 /* yemeksepetiApp.app */,
+				99818D322F43AAC400B5BA65 /* yemeksepetiAppTests.xctest */,
+				99818D3C2F43AAC400B5BA65 /* yemeksepetiAppUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		99818DFC2F44488D00B5BA65 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		99818D222F43AABA00B5BA65 /* yemeksepetiApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99818D462F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiApp" */;
+			buildPhases = (
+				99818D1F2F43AABA00B5BA65 /* Sources */,
+				99818D202F43AABA00B5BA65 /* Frameworks */,
+				99818D212F43AABA00B5BA65 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				99818D252F43AABA00B5BA65 /* yemeksepetiApp */,
+			);
+			name = yemeksepetiApp;
+			packageProductDependencies = (
+				99818DFD2F44488D00B5BA65 /* FirebaseAuth */,
+				99818DFF2F44489600B5BA65 /* FirebaseFirestore */,
+				99818E012F44489D00B5BA65 /* FirebaseCore */,
+			);
+			productName = yemeksepetiApp;
+			productReference = 99818D232F43AABA00B5BA65 /* yemeksepetiApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		99818D312F43AAC400B5BA65 /* yemeksepetiAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99818D492F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiAppTests" */;
+			buildPhases = (
+				99818D2E2F43AAC400B5BA65 /* Sources */,
+				99818D2F2F43AAC400B5BA65 /* Frameworks */,
+				99818D302F43AAC400B5BA65 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				99818D342F43AAC400B5BA65 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				99818D352F43AAC400B5BA65 /* yemeksepetiAppTests */,
+			);
+			name = yemeksepetiAppTests;
+			packageProductDependencies = (
+				99818E032F4448BC00B5BA65 /* FirebaseAuth */,
+				99818E052F4448C100B5BA65 /* FirebaseCore */,
+				99818E072F4448C700B5BA65 /* FirebaseFirestore */,
+			);
+			productName = yemeksepetiAppTests;
+			productReference = 99818D322F43AAC400B5BA65 /* yemeksepetiAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		99818D3B2F43AAC400B5BA65 /* yemeksepetiAppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99818D4C2F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiAppUITests" */;
+			buildPhases = (
+				99818D382F43AAC400B5BA65 /* Sources */,
+				99818D392F43AAC400B5BA65 /* Frameworks */,
+				99818D3A2F43AAC400B5BA65 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				99818D3E2F43AAC400B5BA65 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				99818D3F2F43AAC400B5BA65 /* yemeksepetiAppUITests */,
+			);
+			name = yemeksepetiAppUITests;
+			packageProductDependencies = (
+			);
+			productName = yemeksepetiAppUITests;
+			productReference = 99818D3C2F43AAC400B5BA65 /* yemeksepetiAppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		99818D1B2F43AABA00B5BA65 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					99818D222F43AABA00B5BA65 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					99818D312F43AAC400B5BA65 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 99818D222F43AABA00B5BA65;
+					};
+					99818D3B2F43AAC400B5BA65 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 99818D222F43AABA00B5BA65;
+					};
+				};
+			};
+			buildConfigurationList = 99818D1E2F43AABA00B5BA65 /* Build configuration list for PBXProject "yemeksepetiApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 99818D1A2F43AABA00B5BA65;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 99818D242F43AABA00B5BA65 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				99818D222F43AABA00B5BA65 /* yemeksepetiApp */,
+				99818D312F43AAC400B5BA65 /* yemeksepetiAppTests */,
+				99818D3B2F43AAC400B5BA65 /* yemeksepetiAppUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		99818D212F43AABA00B5BA65 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D302F43AAC400B5BA65 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D3A2F43AAC400B5BA65 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		99818D1F2F43AABA00B5BA65 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D2E2F43AAC400B5BA65 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99818D382F43AAC400B5BA65 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		99818D342F43AAC400B5BA65 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 99818D222F43AABA00B5BA65 /* yemeksepetiApp */;
+			targetProxy = 99818D332F43AAC400B5BA65 /* PBXContainerItemProxy */;
+		};
+		99818D3E2F43AAC400B5BA65 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 99818D222F43AABA00B5BA65 /* yemeksepetiApp */;
+			targetProxy = 99818D3D2F43AAC400B5BA65 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		99818D442F43AAC400B5BA65 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		99818D452F43AAC400B5BA65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		99818D472F43AAC400B5BA65 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.3;
+			};
+			name = Debug;
+		};
+		99818D482F43AAC400B5BA65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.3;
+			};
+			name = Release;
+		};
+		99818D4A2F43AAC400B5BA65 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/yemeksepetiApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/yemeksepetiApp";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		99818D4B2F43AAC400B5BA65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/yemeksepetiApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/yemeksepetiApp";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		99818D4D2F43AAC400B5BA65 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiAppUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = yemeksepetiApp;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		99818D4E2F43AAC400B5BA65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 444G46X2JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ozertuu.yemeksepetiAppUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = yemeksepetiApp;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		99818D1E2F43AABA00B5BA65 /* Build configuration list for PBXProject "yemeksepetiApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99818D442F43AAC400B5BA65 /* Debug */,
+				99818D452F43AAC400B5BA65 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99818D462F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99818D472F43AAC400B5BA65 /* Debug */,
+				99818D482F43AAC400B5BA65 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99818D492F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99818D4A2F43AAC400B5BA65 /* Debug */,
+				99818D4B2F43AAC400B5BA65 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99818D4C2F43AAC400B5BA65 /* Build configuration list for PBXNativeTarget "yemeksepetiAppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99818D4D2F43AAC400B5BA65 /* Debug */,
+				99818D4E2F43AAC400B5BA65 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		99818DFD2F44488D00B5BA65 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		99818DFF2F44489600B5BA65 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		99818E012F44489D00B5BA65 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		99818E032F4448BC00B5BA65 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		99818E052F4448C100B5BA65 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		99818E072F4448C700B5BA65 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 99818D1B2F43AABA00B5BA65 /* Project object */;
+}

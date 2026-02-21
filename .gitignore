@@ -1,0 +1,41 @@
+# Xcode build output
+.build/
+build/
+DerivedData/
+*.xcuserstate
+
+# Xcode user-specific settings
+xcuserdata/
+*.xcuserdatad/
+
+# Swift Package Manager cache
+.swiftpm/
+SourcePackages/
+
+# Dependency managers
+Pods/
+Carthage/Build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Sensitive / secrets
+GoogleService-Info.plist
+*.plist.bak
+Secrets.swift
+
+# Local environment
+.env
+.env.local
+
+# Backup files
+*.bak
+*.orig
+
+# VS Code
+.vscode/
+
+# Sources mirror (not used in Xcode project)
+Sources/
