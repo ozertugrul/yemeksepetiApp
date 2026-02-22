@@ -3,18 +3,8 @@ import FirebaseAuth
 
 // MARK: - APIConfig
 
-/// Feature flag: true → FastAPI kullan, false → Firestore fallback
-/// Build scheme'e göre ya da remote config ile değiştirilebilir.
 enum APIConfig {
-    static var baseURL: String {
-        ProcessInfo.processInfo.environment["API_BASE_URL"]
-            ?? "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
-    }
-
-    /// false yapılırsa tüm çağrılar Firestore'a (DataService) düşer — rollback
-    static var useSQLBackend: Bool {
-        ProcessInfo.processInfo.environment["USE_SQL_BACKEND"] != "false"
-    }
+    static let baseURL = "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
 
     static var useRecommendations: Bool {
         ProcessInfo.processInfo.environment["USE_RECOMMENDATIONS"] != "false"
@@ -63,15 +53,10 @@ actor APIClient {
     // ── Token ─────────────────────────────────────────────────────────────────
 
     private func idToken() async throws -> String {
-        return try await withCheckedThrowingContinuation { cont in
-            Auth.auth().currentUser?.getIDToken { token, error in
-                if let error { cont.resume(throwing: error); return }
-                guard let token else {
-                    cont.resume(throwing: APIError.unauthorized); return
-                }
-                cont.resume(returning: token)
-            }
+        guard let user = Auth.auth().currentUser else {
+            throw APIError.unauthorized
         }
+        return try await user.getIDToken()
     }
 
     // ── Request builder ───────────────────────────────────────────────────────
@@ -153,6 +138,7 @@ actor APIClient {
 
     func put<T: Decodable>(_ type: T.Type, path: String, encodable: some Encodable) async throws -> T {
         let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(encodable)
         return try await execute(type, method: "PUT", path: path, body: body)
     }

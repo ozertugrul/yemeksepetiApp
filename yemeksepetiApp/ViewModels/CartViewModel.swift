@@ -21,6 +21,7 @@ struct CartItem: Identifiable {
 
 // MARK: - CartViewModel
 
+@MainActor
 final class CartViewModel: ObservableObject {
     @Published var items: [CartItem] = []
     @Published var restaurantId: String?

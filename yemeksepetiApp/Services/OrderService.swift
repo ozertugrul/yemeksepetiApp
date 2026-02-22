@@ -4,13 +4,17 @@ import Combine
 // MARK: - ListenerRegistration (replaces FirebaseFirestore.ListenerRegistration)
 
 /// Drop-in replacement for Firestore's ListenerRegistration.
-/// Uses a Timer to poll the backend at a fixed interval.
+/// Schedules a polling Timer on RunLoop.main so it fires regardless of which
+/// thread created this object.
 final class ListenerRegistration {
     private var timer: Timer?
 
     init(interval: TimeInterval, fireImmediately: Bool = true, action: @escaping () -> Void) {
         if fireImmediately { action() }
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in action() }
+        // RunLoop.main ensures the timer fires even when created from a background Task
+        let t = Timer(timeInterval: interval, repeats: true) { _ in action() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     func remove() {
@@ -21,24 +25,32 @@ final class ListenerRegistration {
 
 // MARK: - OrderService
 
+/// Wraps OrderAPIService with callback-based APIs consumed by SwiftUI views.
+/// @MainActor guarantees all completions run on the main thread without
+/// sprinkling DispatchQueue.main.async at every call site.
+@MainActor
 final class OrderService: ObservableObject {
     private let orderAPI = OrderAPIService()
+
+    // MARK: - Place Order
 
     func placeOrder(_ order: Order, completion: @escaping (Result<Order, Error>) -> Void) {
         Task {
             do {
                 let placed = try await orderAPI.placeOrder(order)
-                DispatchQueue.main.async { completion(.success(placed)) }
+                completion(.success(placed))
             } catch {
-                DispatchQueue.main.async { completion(.failure(error)) }
+                completion(.failure(error))
             }
         }
     }
 
+    // MARK: - User Orders
+
     func fetchUserOrders(userId: String, completion: @escaping ([Order]) -> Void) {
         Task {
             let orders = (try? await orderAPI.fetchMyOrders()) ?? []
-            DispatchQueue.main.async { completion(orders) }
+            completion(orders)
         }
     }
 
@@ -47,28 +59,17 @@ final class OrderService: ObservableObject {
             guard let self else { return }
             Task {
                 let orders = (try? await self.orderAPI.fetchMyOrders()) ?? []
-                DispatchQueue.main.async { onUpdate(orders) }
+                onUpdate(orders)
             }
         }
     }
 
-    func requestCancellation(orderId: String, reason: String, completion: @escaping (Error?) -> Void) {
-        DispatchQueue.main.async { completion(nil) }
-    }
-
-    func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Error?) -> Void) {
-        if approve { updateOrderStatus(orderId: orderId, status: .cancelled, completion: completion) }
-        else { DispatchQueue.main.async { completion(nil) } }
-    }
-
-    func cancelOrder(orderId: String, completion: @escaping (Error?) -> Void) {
-        updateOrderStatus(orderId: orderId, status: .cancelled, completion: completion)
-    }
+    // MARK: - Restaurant Orders (owner / admin)
 
     func fetchRestaurantOrders(restaurantId: String, completion: @escaping ([Order]) -> Void) {
         Task {
             let orders = (try? await orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)) ?? []
-            DispatchQueue.main.async { completion(orders) }
+            completion(orders)
         }
     }
 
@@ -77,38 +78,63 @@ final class OrderService: ObservableObject {
             guard let self else { return }
             Task {
                 let orders = (try? await self.orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)) ?? []
-                DispatchQueue.main.async { onUpdate(orders) }
+                onUpdate(orders)
             }
         }
     }
+
+    // MARK: - Status Updates
 
     func updateOrderStatus(orderId: String, status: OrderStatus, completion: @escaping (Error?) -> Void) {
         Task {
             do {
                 _ = try await orderAPI.updateStatus(orderId: orderId, status: status)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
 
+    func cancelOrder(orderId: String, completion: @escaping (Error?) -> Void) {
+        updateOrderStatus(orderId: orderId, status: .cancelled, completion: completion)
+    }
+
+    func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Error?) -> Void) {
+        if approve { cancelOrder(orderId: orderId, completion: completion) }
+        else { completion(nil) }
+    }
+
+    // MARK: - Cancellation Request (stub — no backend endpoint yet)
+
+    func requestCancellation(orderId: String, reason: String, completion: @escaping (Error?) -> Void) {
+        completion(nil)
+    }
+
+    // MARK: - Sales Report
+
+    func fetchSalesData(restaurantId: String, from startDate: Date, to endDate: Date,
+                        completion: @escaping ([Order]) -> Void) {
+        Task {
+            let all = (try? await orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)) ?? []
+            let filtered = all
+                .filter { $0.status == .completed && $0.createdAt >= startDate && $0.createdAt <= endDate }
+                .sorted { $0.createdAt > $1.createdAt }
+            completion(filtered)
+        }
+    }
+
+    // MARK: - Reviews (stub — no backend endpoint yet)
+
     func submitReview(_ review: OrderReview, restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
-        DispatchQueue.main.async { completion(nil) }
+        completion(nil)
     }
 
     func fetchReviews(restaurantId: String, completion: @escaping ([OrderReview]) -> Void) {
-        DispatchQueue.main.async { completion([]) }
+        completion([])
     }
+
+    // MARK: - No-op helpers kept for API compatibility
 
     func incrementSuccessfulOrders(restaurantId: String) { }
-
-    func fetchSalesData(restaurantId: String, from startDate: Date, to endDate: Date, completion: @escaping ([Order]) -> Void) {
-        Task {
-            let all = (try? await orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)) ?? []
-            let filtered = all.filter { $0.status == .completed && $0.createdAt >= startDate && $0.createdAt <= endDate }
-                              .sorted { $0.createdAt > $1.createdAt }
-            DispatchQueue.main.async { completion(filtered) }
-        }
-    }
 }

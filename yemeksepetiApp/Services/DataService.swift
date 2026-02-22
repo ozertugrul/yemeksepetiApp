@@ -3,6 +3,10 @@ import Combine
 
 /// Thin adapter layer — routes all calls to the SQL API services.
 /// FirebaseFirestore has been fully removed.
+///
+/// @MainActor ensures all published-property mutations happen on the main thread,
+/// eliminating the need for DispatchQueue.main.async boilerplate throughout.
+@MainActor
 class DataService: ObservableObject {
     private let restaurantAPI = RestaurantAPIService()
     private let adminAPI      = AdminAPIService()
@@ -16,21 +20,21 @@ class DataService: ObservableObject {
     func fetchRestaurants(completion: @escaping ([Restaurant]) -> Void) {
         Task {
             let list = (try? await restaurantAPI.fetchActive()) ?? []
-            DispatchQueue.main.async { completion(list) }
+            completion(list)
         }
     }
 
     func getAllRestaurantsForAdmin(completion: @escaping ([Restaurant]) -> Void) {
         Task {
             let list = (try? await adminAPI.fetchAllRestaurants()) ?? []
-            DispatchQueue.main.async { completion(list) }
+            completion(list)
         }
     }
 
     func fetchRestaurant(id: String, completion: @escaping (Restaurant?) -> Void) {
         Task {
             let r = try? await restaurantAPI.fetchDetail(id: id)
-            DispatchQueue.main.async { completion(r) }
+            completion(r)
         }
     }
 
@@ -38,9 +42,9 @@ class DataService: ObservableObject {
         Task {
             do {
                 _ = try await restaurantAPI.createRestaurant(restaurant)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -50,9 +54,9 @@ class DataService: ObservableObject {
             do {
                 _ = try await restaurantAPI.createRestaurant(restaurant)
                 try await adminAPI.updateUserRole(uid: ownerUid, role: .storeOwner)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -61,9 +65,9 @@ class DataService: ObservableObject {
         Task {
             do {
                 _ = try await restaurantAPI.updateRestaurant(restaurant)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -72,9 +76,9 @@ class DataService: ObservableObject {
         Task {
             do {
                 try await adminAPI.updateUserRole(uid: uid, role: .storeOwner)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -85,9 +89,9 @@ class DataService: ObservableObject {
                 for item in menu {
                     try await restaurantAPI.upsertMenuItem(restaurantId: restaurantId, item: item)
                 }
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -96,9 +100,9 @@ class DataService: ObservableObject {
         Task {
             do {
                 try await adminAPI.deleteRestaurant(id: restaurantId)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -113,9 +117,9 @@ class DataService: ObservableObject {
                     city: data["city"] as? String,
                     phone: data["phone"] as? String
                 )
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -125,22 +129,26 @@ class DataService: ObservableObject {
     func fetchAddresses(uid: String, completion: @escaping ([UserAddress]) -> Void) {
         Task {
             let list = (try? await userAPI.fetchAddresses()) ?? []
-            DispatchQueue.main.async { completion(list) }
+            completion(list)
         }
     }
 
+    /// Save an address: tries PUT (update) first, falls back to POST (create) only on 404.
     func saveAddress(uid: String, address: UserAddress, completion: @escaping (Error?) -> Void) {
         Task {
             do {
                 _ = try await userAPI.updateAddress(address)
-                DispatchQueue.main.async { completion(nil) }
-            } catch {
+                completion(nil)
+            } catch APIError.notFound {
+                // Address doesn't exist on server yet — create it
                 do {
                     _ = try await userAPI.createAddress(address)
-                    DispatchQueue.main.async { completion(nil) }
+                    completion(nil)
                 } catch {
-                    DispatchQueue.main.async { completion(error) }
+                    completion(error)
                 }
+            } catch {
+                completion(error)
             }
         }
     }
@@ -149,9 +157,9 @@ class DataService: ObservableObject {
         Task {
             do {
                 try await userAPI.deleteAddress(id: addressId)
-                DispatchQueue.main.async { completion(nil) }
+                completion(nil)
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                completion(error)
             }
         }
     }
@@ -159,7 +167,7 @@ class DataService: ObservableObject {
     // MARK: - Cards (in-memory)
 
     func fetchCards(uid: String, completion: @escaping ([SavedCard]) -> Void) {
-        DispatchQueue.main.async { completion(self.cardStore[uid] ?? []) }
+        completion(cardStore[uid] ?? [])
     }
 
     func saveCard(uid: String, card: SavedCard, completion: @escaping (Error?) -> Void) {
@@ -167,31 +175,31 @@ class DataService: ObservableObject {
         if let idx = cards.firstIndex(where: { $0.id == card.id }) { cards[idx] = card }
         else { cards.append(card) }
         cardStore[uid] = cards
-        DispatchQueue.main.async { completion(nil) }
+        completion(nil)
     }
 
     func deleteCard(uid: String, cardId: String, completion: @escaping (Error?) -> Void) {
         cardStore[uid]?.removeAll { $0.id == cardId }
-        DispatchQueue.main.async { completion(nil) }
+        completion(nil)
     }
 
-    // MARK: - Coupons (stub)
+    // MARK: - Coupons (stub — no backend endpoint yet)
 
     func fetchCoupons(uid: String, completion: @escaping ([DiscountCoupon]) -> Void) {
-        DispatchQueue.main.async { completion([]) }
+        completion([])
     }
 
     func saveCoupon(uid: String, coupon: DiscountCoupon, completion: @escaping (Error?) -> Void) {
-        DispatchQueue.main.async { completion(nil) }
+        completion(nil)
     }
 
     // MARK: - Notification Preferences (stub)
 
     func fetchNotificationPreferences(uid: String, completion: @escaping (NotificationPreferences) -> Void) {
-        DispatchQueue.main.async { completion(NotificationPreferences()) }
+        completion(NotificationPreferences())
     }
 
     func saveNotificationPreferences(uid: String, prefs: NotificationPreferences, completion: @escaping (Error?) -> Void) {
-        DispatchQueue.main.async { completion(nil) }
+        completion(nil)
     }
 }

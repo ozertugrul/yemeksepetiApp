@@ -10,7 +10,6 @@ class AuthService: ObservableObject {
     @Published var errorMessage: String?
 
     private let userAPI = UserAPIService()
-    private var cancellables = Set<AnyCancellable>()
 
     init() {
         _ = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
@@ -67,19 +66,41 @@ class AuthService: ObservableObject {
             }
             guard let firebaseUser = result?.user else { return }
 
-            // Set Firebase display name
+            // Set Firebase display name (async, fire-and-forget)
             let changeRequest = firebaseUser.createProfileChangeRequest()
             changeRequest.displayName = displayName
             changeRequest.commitChanges(completion: nil)
 
-            // Fetch from backend — GET /users/me auto-creates the user row
-            self.fetchUserProfileFromAPI(uid: firebaseUser.uid) { appUser in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    if let appUser { completion(.success(appUser)) }
-                    else {
-                        completion(.failure(NSError(domain: "AuthService", code: -2,
-                                                    userInfo: [NSLocalizedDescriptionKey: "Profil oluşturulamadı"])))
+            // Create backend user row, sync displayName, then fetch canonical profile
+            Task {
+                do {
+                    // GET /users/me auto-creates the PostgreSQL row
+                    _ = try await self.userAPI.fetchMyProfile()
+                    // Push displayName into PostgreSQL
+                    if !displayName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        _ = try? await self.userAPI.updateMyProfile(displayName: displayName)
+                    }
+                    // Fetch updated profile
+                    let profile = try await self.userAPI.fetchMyProfile()
+                    let appUser = AppUser(
+                        id: firebaseUser.uid,
+                        email: profile.email ?? email,
+                        role: Self.mapAPIRole(profile.role),
+                        managedRestaurantId: profile.managedRestaurantId,
+                        fullName: profile.displayName ?? displayName,
+                        phone: profile.phone,
+                        city: profile.city
+                    )
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.user = appUser
+                        completion(.success(appUser))
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.errorMessage = error.localizedDescription
+                        completion(.failure(error))
                     }
                 }
             }
@@ -173,10 +194,17 @@ class AuthService: ObservableObject {
                                userInfo: [NSLocalizedDescriptionKey: "Kullanıcı bulunamadı"]))
             return
         }
-        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-        firebaseUser.reauthenticate(with: credential) { _, error in
-            if let error { completion(error); return }
-            firebaseUser.updateEmail(to: newEmail) { err in completion(err) }
+        Task {
+            do {
+                let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
+                try await firebaseUser.reauthenticate(with: credential)
+                // TODO: Replace with sendEmailVerification(beforeUpdatingEmail:) for enhanced
+                // security once the UserProfileView UX supports the verification-email flow.
+                try await firebaseUser.updateEmail(to: newEmail)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
         }
     }
 
@@ -187,10 +215,15 @@ class AuthService: ObservableObject {
                                userInfo: [NSLocalizedDescriptionKey: "Kullanıcı bulunamadı"]))
             return
         }
-        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-        firebaseUser.reauthenticate(with: credential) { _, error in
-            if let error { completion(error); return }
-            firebaseUser.updatePassword(to: newPassword) { err in completion(err) }
+        Task {
+            do {
+                let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
+                try await firebaseUser.reauthenticate(with: credential)
+                try await firebaseUser.updatePassword(to: newPassword)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
         }
     }
 
