@@ -114,10 +114,22 @@ async def update_user_role(
     role = body.get("role")
     if role not in ("user", "storeOwner", "admin"):
         raise HTTPException(status_code=422, detail=f"Geçersiz rol: {role!r}")
-    repo = SQLUserRepository(db)
-    u = await repo.update(uid, {"role": role})
-    if not u:
+
+    user_repo = SQLUserRepository(db)
+    user = await user_repo.get_by_id(uid)
+    if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+    # storeOwner'dan farklı bir role düşürülüyorsa → restoranını pasife çek + sahipsizleştir
+    if user.role == "storeOwner" and role != "storeOwner":
+        rest_repo = SQLRestaurantRepository(db)
+        restaurant = await rest_repo.get_by_owner(uid)
+        if restaurant:
+            await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
+        # Kullanıcının managed_restaurant_id'sini de temizle
+        await user_repo.update(uid, {"managed_restaurant_id": None})
+
+    u = await user_repo.update(uid, {"role": role})
     return _user_schema(u)
 
 
@@ -131,10 +143,37 @@ async def delete_user(
 ):
     if uid == current_user.uid:
         raise HTTPException(status_code=400, detail="Kendinizi silemezsiniz.")
-    repo = SQLUserRepository(db)
-    deleted = await repo.delete_by_id(uid)
+
+    user_repo = SQLUserRepository(db)
+    user = await user_repo.get_by_id(uid)
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+    # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
+    # Restoranı sahipsizleştir + pasife al (siparişler kaybolmasın).
+    rest_repo = SQLRestaurantRepository(db)
+    restaurant = await rest_repo.get_by_owner(uid)
+    if restaurant:
+        await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
+
+    # PostgreSQL'den sil:
+    # 1. Önce kullanıcının siparişlerini sil (orders.user_id NOT NULL FK kısıtı)
+    from sqlalchemy import delete as sa_delete
+    from app.models.orm_models import OrderORM
+    await db.execute(sa_delete(OrderORM).where(OrderORM.user_id == uid))
+
+    # 2. Kullanıcıyı sil (user_addresses cascade ile gider)
+    deleted = await user_repo.delete_by_id(uid)
     if not deleted:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+    # Firebase'den de sil (yoksa kişi tekrar login olabilir)
+    _init_firebase_app()
+    try:
+        from firebase_admin import auth as firebase_auth
+        firebase_auth.delete_user(uid)
+    except Exception:
+        pass  # Firebase'de yoksa sessizce geç
 
 
 # ── Restoran Yönetimi ─────────────────────────────────────────────────────────
