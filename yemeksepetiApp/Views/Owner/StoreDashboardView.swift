@@ -75,9 +75,22 @@ struct StoreDashboardView: View {
                 NoRestaurantView(onCreateTapped: { showingCreateSheet = true })
             }
         }
-        .navigationTitle(restaurant?.name ?? "Mağaza Paneli")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // ── Ortada: mağaza adı + oturum e-postası ─────────────────
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text(restaurant?.name ?? "Mağaza Paneli")
+                        .font(.headline)
+                        .lineLimit(1)
+                    if let email = viewModel.authService.currentUser?.email {
+                        Text(email)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     viewModel.authService.signOut()
