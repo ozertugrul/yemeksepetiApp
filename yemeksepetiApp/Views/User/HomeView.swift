@@ -560,11 +560,15 @@ struct RestaurantDetailView: View {
     @State private var showingDifferentRestaurantAlert = false
     @State private var pendingItem: MenuItem?
     @State private var selectedCategory: String? = nil
+    @State private var loadedMenu: [MenuItem] = []
 
     private var cart: CartViewModel { viewModel.cart }
 
+    /// Uses freshly fetched detail endpoint menu; falls back to list data.
+    private var effectiveMenu: [MenuItem] { loadedMenu.isEmpty ? restaurant.menu : loadedMenu }
+
     private var categories: [String] {
-        Array(Set(restaurant.menu.filter(\.isAvailable).map(\.category))).sorted()
+        Array(Set(effectiveMenu.filter(\.isAvailable).map(\.category))).sorted()
     }
 
     private var displayRating: Double {
@@ -618,6 +622,7 @@ struct RestaurantDetailView: View {
         }
         .navigationTitle(restaurant.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { fetchMenuDetail() }
         .sheet(item: $showingOptionSheet) { item in
             ItemOptionSheet(item: item, restaurant: restaurant, cart: cart) {
                 lastAddedItem = item
@@ -839,7 +844,7 @@ struct RestaurantDetailView: View {
     // MARK: Menu Section
 
     private func menuSection(category: String) -> some View {
-        let items = restaurant.menu.filter { $0.category == category && $0.isAvailable }
+        let items = effectiveMenu.filter { $0.category == category && $0.isAvailable }
         return VStack(alignment: .leading, spacing: 0) {
             // Section header
             Text(category)
@@ -909,6 +914,14 @@ struct RestaurantDetailView: View {
 
     // MARK: Helpers
 
+    private func fetchMenuDetail() {
+        viewModel.dataService.fetchRestaurant(id: restaurant.id) { detail in
+            if let menu = detail?.menu, !menu.isEmpty {
+                DispatchQueue.main.async { self.loadedMenu = menu }
+            }
+        }
+    }
+
     private func handleAddToCart(item: MenuItem) {
         if let cartRestId = cart.restaurantId, cartRestId != restaurant.id {
             pendingItem = item
@@ -928,7 +941,7 @@ struct RestaurantDetailView: View {
     private func checkSuggestions(for item: MenuItem) {
         let ids = item.suggestedItemIds
         let available = ids.compactMap { id in
-            restaurant.menu.first(where: { $0.id == id && $0.isAvailable })
+            effectiveMenu.first(where: { $0.id == id && $0.isAvailable })
         }
         if !available.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showingSuggested = true }
