@@ -24,10 +24,12 @@ struct APIOrderOut: Decodable {
     func toOrder(restaurantName: String = "") -> Order {
         let status = OrderStatus(rawValue: self.status) ?? .pending
         let method = PaymentMethod(rawValue: self.paymentMethod) ?? .cashOnDelivery
+        // restaurantName backend'den gelmiyorsa restaurantId'yi göster
+        let resolvedName = restaurantName.isEmpty ? restaurantId : restaurantName
         return Order(
             id: id,
             restaurantId: restaurantId,
-            restaurantName: restaurantName,
+            restaurantName: resolvedName,
             userId: userId,
             userEmail: "",
             items: items,

@@ -58,17 +58,11 @@ class DataService: ObservableObject {
         }
     }
 
+    /// Store owner kendi restoranını oluşturur.
+    /// `ownerUid` parametresi geriye dönük uyumluluk için tutulmaktadır;
+    /// sahiplik belirleme backend tarafında token üzerinden yapılır.
     func createRestaurantForOwner(restaurant: Restaurant, ownerUid: String, completion: @escaping (Error?) -> Void) {
-        Task {
-            do {
-                // Store owner creates their OWN restaurant — no admin call needed.
-                // Role is already set to storeOwner by the admin beforehand.
-                _ = try await restaurantAPI.createRestaurant(restaurant)
-                completion(nil)
-            } catch {
-                completion(error)
-            }
-        }
+        createRestaurant(restaurant: restaurant, completion: completion)
     }
 
     func updateRestaurant(restaurant: Restaurant, completion: @escaping (Error?) -> Void) {

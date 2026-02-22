@@ -5,6 +5,7 @@ struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var email = ""
+    @State private var displayName = ""
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var isSecured = true
@@ -12,8 +13,14 @@ struct RegisterView: View {
     @State private var errorMessage = ""
     @State private var isLoading = false
     
+    private var isEmailValid: Bool {
+        let t = email.trimmingCharacters(in: .whitespaces)
+        return t.count > 5 && t.contains("@") && t.contains(".")
+    }
+
     private var isFormValid: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !displayName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        isEmailValid &&
         password.count >= 6 &&
         password == confirmPassword
     }
@@ -27,6 +34,18 @@ struct RegisterView: View {
                     .foregroundColor(.red)
                     .padding(.bottom, 20)
                 
+                // Ad Soyad
+                TextField("Ad Soyad", text: $displayName)
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                    .textInputAutocapitalization(.words)
+                    .disableAutocorrection(true)
+
                 // Email
                 TextField("E-posta", text: $email)
                     .padding()
@@ -129,9 +148,15 @@ struct RegisterView: View {
     
     private func register() {
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedName  = displayName.trimmingCharacters(in: .whitespaces)
         
-        guard !trimmedEmail.isEmpty else {
-            errorMessage = "Lütfen geçerli bir e-posta girin."
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Lütfen adınızı ve soyadınızı girin."
+            return
+        }
+        
+        guard isEmailValid else {
+            errorMessage = "Lütfen geçerli bir e-posta adresi girin."
             return
         }
         
@@ -148,7 +173,7 @@ struct RegisterView: View {
         errorMessage = ""
         isLoading = true
         
-        viewModel.authService.register(email: trimmedEmail, password: password, displayName: "") { result in
+        viewModel.authService.register(email: trimmedEmail, password: password, displayName: trimmedName) { result in
             // AuthService guarantees main thread delivery
             self.isLoading = false
             switch result {

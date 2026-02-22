@@ -10,6 +10,12 @@ struct APIAdminUser: Decodable, Identifiable {
     var city: String?
     var managedRestaurantId: String?
 
+    enum CodingKeys: String, CodingKey {
+        case id, email, role, city
+        case displayName         = "display_name"
+        case managedRestaurantId = "managed_restaurant_id"
+    }
+
     func toAppUser() -> AppUser {
         AppUser(
             id: id, email: email ?? "",

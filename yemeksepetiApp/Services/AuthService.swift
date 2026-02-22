@@ -43,7 +43,14 @@ class AuthService: ObservableObject {
                 }
                 return
             }
-            guard let firebaseUser = result?.user else { return }
+            guard let firebaseUser = result?.user else {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(.failure(NSError(domain: "AuthService", code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Giriş başarısız oldu, lütfen tekrar deneyin."])))
+                }
+                return
+            }
 
             // Firebase login başarılı — hemen minimal AppUser ile devam et
             let fallbackUser = AppUser(
@@ -81,7 +88,15 @@ class AuthService: ObservableObject {
                 }
                 return
             }
-            guard let firebaseUser = result?.user else { return }
+            guard let firebaseUser = result?.user else {
+                self.suppressNextListenerFetch = false
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(.failure(NSError(domain: "AuthService", code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "Kayıt başarısız oldu, lütfen tekrar deneyin."])))
+                }
+                return
+            }
 
             // Firebase profil adını set et (fire-and-forget)
             let changeRequest = firebaseUser.createProfileChangeRequest()

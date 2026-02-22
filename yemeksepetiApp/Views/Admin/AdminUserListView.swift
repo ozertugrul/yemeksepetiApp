@@ -226,7 +226,9 @@ struct AdminUserListView: View {
 
     func deleteAllUsers() {
         isDeletingAll = true
-        let usersToDelete = allUsers
+        // Mevcut admin kullanıcı kendi hesabını silmesin
+        let currentUid = viewModel.authService.currentUser?.id
+        let usersToDelete = allUsers.filter { $0.id != currentUid }
         let group = DispatchGroup()
         var errors: [String] = []
         for user in usersToDelete {

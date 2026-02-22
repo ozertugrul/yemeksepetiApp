@@ -428,7 +428,13 @@ struct CheckoutView: View {
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private var canPlaceOrder: Bool {
-        selectedAddress != nil
+        guard selectedAddress != nil else { return false }
+        // Seçili ödeme yönteminin restoran tarafından desteklendiğini doğrula
+        switch selectedPayment {
+        case .cashOnDelivery, .cardOnDelivery: return allowsCashOnDelivery
+        case .pickup:                          return allowsPickup
+        case .onlineCard:                      return false  // Henüz aktif değil
+        }
     }
 
     private func loadData() {

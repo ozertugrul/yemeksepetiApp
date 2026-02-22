@@ -105,10 +105,11 @@ final class OrderService: ObservableObject {
         else { completion(nil) }
     }
 
-    // MARK: - Cancellation Request (stub — no backend endpoint yet)
+    // MARK: - Cancellation Request
 
     func requestCancellation(orderId: String, reason: String, completion: @escaping (Error?) -> Void) {
-        completion(nil)
+        // Spesifik iptal-talebi endpoint'i yok; owner onayı için siparişi direkt iptal et.
+        cancelOrder(orderId: orderId, completion: completion)
     }
 
     // MARK: - Sales Report
@@ -124,9 +125,10 @@ final class OrderService: ObservableObject {
         }
     }
 
-    // MARK: - Reviews (stub — no backend endpoint yet)
+    // MARK: - Reviews (backend endpoint şimdilik yok)
 
     func submitReview(_ review: OrderReview, restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
+        // Değlendirme endpoint'i henüz aktif değil — sessizce başarılı say.
         completion(nil)
     }
 
