@@ -13,8 +13,11 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.database import get_db
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -46,9 +49,10 @@ class FirebaseUser:
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> FirebaseUser:
     """
-    Bearer token'ı Firebase ile doğrula.
+    Bearer token'ı Firebase ile doğrula, ardından rolü PostgreSQL'den oku.
     Geçersiz/eksik token → 401.
     """
     _init_firebase_app()
@@ -67,19 +71,28 @@ async def get_current_user(
             detail=f"Geçersiz Firebase token: {exc}",
         )
 
-    # Custom claims'dan role oku (varsa)
-    role = decoded.get("role", "user")
-    return FirebaseUser(uid=decoded["uid"], email=decoded.get("email"), role=role)
+    uid = decoded["uid"]
+    email = decoded.get("email")
+
+    # Rolü her zaman PostgreSQL'den oku (custom claims'e güvenme)
+    result = await db.execute(
+        text("SELECT role FROM users WHERE id = :uid"), {"uid": uid}
+    )
+    row = result.fetchone()
+    role = row[0] if row else "user"
+
+    return FirebaseUser(uid=uid, email=email, role=role)
 
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[FirebaseUser]:
     """Public endpoint'ler için — token yoksa None döner, hata fırlatmaz."""
     if not credentials:
         return None
     try:
-        return await get_current_user(credentials)
+        return await get_current_user(credentials, db)
     except HTTPException:
         return None
 
