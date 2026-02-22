@@ -5,76 +5,113 @@ struct AdminRestaurantListView: View {
     @State private var restaurants: [Restaurant] = []
     @State private var showingAddRestaurant = false
     @State private var isLoading = false
-    
+    @State private var restaurantToDelete: Restaurant? = nil
+    @State private var showingDeleteConfirm = false
+    @State private var alertMessage: String?
+    @State private var showingAlert = false
+
     var body: some View {
         List {
-                ForEach(restaurants) { restaurant in
-                    NavigationLink(destination: EditRestaurantView(
-                        restaurant: restaurant,
-                        dataService: DataService(),
-                        onSave: { loadRestaurants() }
-                    )) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(restaurant.name)
-                                    .font(.headline)
-                                Text(restaurant.cuisineType)
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                            }
-                            Spacer()
-                            if restaurant.isActive {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            } else {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.red)
+            ForEach(restaurants) { restaurant in
+                NavigationLink(destination: EditRestaurantView(
+                    restaurant: restaurant,
+                    dataService: viewModel.dataService,
+                    onSave: { loadRestaurants() }
+                )) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(restaurant.name)
+                                .font(.headline)
+                            Text(restaurant.cuisineType)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            if let city = restaurant.city, !city.isEmpty {
+                                Text(city)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
+                        Spacer()
+                        // Aktif/Pasif göstergesi
+                        Image(systemName: restaurant.isActive ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(restaurant.isActive ? .green : .red)
+                        // Admin-only silme butonu
+                        Button {
+                            restaurantToDelete = restaurant
+                            showingDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(.leading, 8)
+                        }
+                        .buttonStyle(.plain) // NavigationLink içinde tap çakışmaması için
                     }
-                }
-                .onDelete(perform: deleteRestaurant)
-            }
-            .navigationTitle("Restoranlar")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showingAddRestaurant = true } label: {
-                        Image(systemName: "plus")
-                    }
+                    .padding(.vertical, 4)
                 }
             }
-            .onAppear(perform: loadRestaurants)
-            .sheet(isPresented: $showingAddRestaurant) {
-                AddRestaurantView(onAdd: {
-                    loadRestaurants()
-                    showingAddRestaurant = false
-                })
+        }
+        .navigationTitle("Restoranlar")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingAddRestaurant = true } label: {
+                    Image(systemName: "plus")
+                }
             }
+        }
+        .onAppear(perform: loadRestaurants)
+        .sheet(isPresented: $showingAddRestaurant) {
+            AddRestaurantView(dataService: viewModel.dataService, onAdd: {
+                loadRestaurants()
+                showingAddRestaurant = false
+            })
+        }
+        // ── Silme onay diyaloğu ───────────────────────────────────────────────
+        .confirmationDialog(
+            restaurantToDelete.map { "'\($0.name)' silinsin mi?" } ?? "Restoran Sil",
+            isPresented: $showingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Evet, Kalıcı Olarak Sil", role: .destructive) {
+                if let r = restaurantToDelete { deleteRestaurant(r) }
+            }
+            Button("İptal", role: .cancel) { restaurantToDelete = nil }
+        } message: {
+            Text("Bu işlem geri alınamaz. Restorana ait tüm menü öğeleri de silinir.")
+        }
+        .alert(alertMessage ?? "", isPresented: $showingAlert) {
+            Button("Tamam", role: .cancel) {}
+        }
     }
-    
+
+    // MARK: - Actions
+
     func loadRestaurants() {
         isLoading = true
-        let ds = DataService()
-        // Here we want ALL restaurants, not just active ones
-        ds.getAllRestaurantsForAdmin { fetchedRestaurants in
+        viewModel.dataService.getAllRestaurantsForAdmin { fetchedRestaurants in
             self.restaurants = fetchedRestaurants
             self.isLoading = false
         }
     }
-    
-    func deleteRestaurant(at offsets: IndexSet) {
-        let ds = DataService()
-        offsets.forEach { index in
-            let restaurant = restaurants[index]
-            ds.deleteRestaurant(restaurantId: restaurant.id) { error in
-                if let error = error {
-                    print("Error deleting restaurant: \(error.localizedDescription)")
+
+    private func deleteRestaurant(_ restaurant: Restaurant) {
+        Task {
+            do {
+                try await viewModel.adminAPI.deleteRestaurant(id: restaurant.id)
+                await MainActor.run {
+                    restaurants.removeAll { $0.id == restaurant.id }
+                    restaurantToDelete = nil
+                }
+            } catch {
+                await MainActor.run {
+                    alertMessage = "Silme hatası: \(error.localizedDescription)"
+                    showingAlert = true
+                    restaurantToDelete = nil
                 }
             }
         }
-        restaurants.remove(atOffsets: offsets)
     }
 }
+
 
 struct AddRestaurantView: View {
     @State private var name = ""
@@ -84,6 +121,7 @@ struct AddRestaurantView: View {
     @State private var city = ""
     @State private var showingCityPicker = false
     @Environment(\.dismiss) private var dismiss
+    let dataService: DataService
     var onAdd: () -> Void
 
     var body: some View {
@@ -147,7 +185,7 @@ struct AddRestaurantView: View {
             city: city.isEmpty ? nil : city
         )
         
-        DataService().createRestaurant(restaurant: newRestaurant) { error in
+        dataService.createRestaurant(restaurant: newRestaurant) { error in
             if let error = error {
                 print("Error creating restaurant: \(error.localizedDescription)")
             } else {
