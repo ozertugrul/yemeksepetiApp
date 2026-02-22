@@ -50,7 +50,7 @@ final class LoginViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = ""
-        authService.register(email: trimmed, password: password) { [weak self] result in
+        authService.register(email: trimmed, password: password, displayName: "") { [weak self] result in
             guard let self else { return }
             self.isLoading = false
             if case .failure(let error) = result {

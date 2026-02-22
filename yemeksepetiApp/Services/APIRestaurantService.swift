@@ -100,6 +100,77 @@ struct RestaurantAPIService {
         let r = try await client.get(APIRestaurant.self, path: "/restaurants/my")
         return r.toRestaurant()
     }
+
+    // MARK: - Admin / Owner CRUD
+
+    func createRestaurant(_ restaurant: Restaurant) async throws -> Restaurant {
+        let api = try await client.post(APIRestaurant.self, path: "/restaurants",
+                                        encodable: RestaurantBody(from: restaurant))
+        return api.toRestaurant()
+    }
+
+    func updateRestaurant(_ restaurant: Restaurant) async throws -> Restaurant {
+        let api = try await client.put(APIRestaurant.self,
+                                       path: "/restaurants/\(restaurant.id)",
+                                       encodable: RestaurantBody(from: restaurant))
+        return api.toRestaurant()
+    }
+
+    func upsertMenuItem(restaurantId: String, item: MenuItem) async throws {
+        _ = try await client.post(APIMenuItem.self,
+                                  path: "/restaurants/\(restaurantId)/menu",
+                                  encodable: MenuItemBody(from: item, restaurantId: restaurantId))
+    }
+}
+
+// MARK: - Request Body types
+
+private struct RestaurantBody: Encodable {
+    var id: String
+    var name: String
+    var ownerId: String?
+    var description: String
+    var cuisineType: String
+    var imageUrl: String?
+    var rating: Double
+    var deliveryTime: String
+    var minOrderAmount: Double
+    var isActive: Bool
+    var city: String?
+    var allowsPickup: Bool
+    var allowsCashOnDelivery: Bool
+
+    init(from r: Restaurant) {
+        id = r.id; name = r.name; ownerId = r.ownerId
+        description = r.description; cuisineType = r.cuisineType
+        imageUrl = r.imageUrl; rating = r.rating
+        deliveryTime = r.deliveryTime; minOrderAmount = r.minOrderAmount
+        isActive = r.isActive; city = r.city
+        allowsPickup = r.allowsPickup; allowsCashOnDelivery = r.allowsCashOnDelivery
+    }
+}
+
+private struct MenuItemBody: Encodable {
+    var id: String
+    var restaurantId: String
+    var name: String
+    var description: String
+    var price: Double
+    var imageUrl: String?
+    var category: String
+    var discountPercent: Double
+    var isAvailable: Bool
+    var optionGroups: [MenuItemOptionGroup]
+    var suggestedIds: [String]
+
+    init(from item: MenuItem, restaurantId: String) {
+        id = item.id; self.restaurantId = restaurantId
+        name = item.name; description = item.description
+        price = item.price; imageUrl = item.imageUrl
+        category = item.category; discountPercent = item.discountPercent
+        isAvailable = item.isAvailable; optionGroups = item.optionGroups
+        suggestedIds = item.suggestedItemIds
+    }
 }
 
 // MARK: - RecommendationService

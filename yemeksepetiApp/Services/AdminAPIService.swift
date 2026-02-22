@@ -2,7 +2,6 @@ import Foundation
 
 // MARK: - APIAdminUser
 
-/// Admin kullanıcı listesi için backend 'UserOut' response
 struct APIAdminUser: Decodable, Identifiable {
     var id: String
     var email: String?
@@ -11,18 +10,10 @@ struct APIAdminUser: Decodable, Identifiable {
     var city: String?
     var managedRestaurantId: String?
 
-    /// Backend 'admin' rolünü iOS 'superAdmin' ile eşleştir
     func toAppUser() -> AppUser {
-        let mappedRole: UserRole
-        switch role {
-        case "admin":      mappedRole = .superAdmin
-        case "storeOwner": mappedRole = .storeOwner
-        default:           mappedRole = .user
-        }
-        return AppUser(
-            id: id,
-            email: email ?? "",
-            role: mappedRole,
+        AppUser(
+            id: id, email: email ?? "",
+            role: AuthService.mapAPIRole(role),
             managedRestaurantId: managedRestaurantId,
             fullName: displayName
         )
@@ -41,9 +32,24 @@ struct AdminAPIService {
         return api.map { $0.toAppUser() }
     }
 
+    func createUser(email: String, password: String,
+                    displayName: String?, role: UserRole) async throws -> AppUser {
+        struct Body: Encodable {
+            var email: String; var password: String
+            var displayName: String?
+            var role: String
+        }
+        let backendRole = role == .superAdmin ? "admin" : role.rawValue
+        let api = try await client.post(
+            APIAdminUser.self,
+            path: "/admin/users",
+            encodable: Body(email: email, password: password, displayName: displayName, role: backendRole)
+        )
+        return api.toAppUser()
+    }
+
     func updateUserRole(uid: String, role: UserRole) async throws {
         struct RoleBody: Encodable { var role: String }
-        // iOS superAdmin → backend "admin"
         let backendRole = role == .superAdmin ? "admin" : role.rawValue
         _ = try await client.patch(
             APIAdminUser.self,
@@ -59,15 +65,22 @@ struct AdminAPIService {
     // ── Restoran Yönetimi ─────────────────────────────────────────────────────
 
     func fetchAllRestaurants() async throws -> [Restaurant] {
-        let api = try await client.get(
-            [APIRestaurant].self,
-            path: "/restaurants/admin/all"
-        )
+        let api = try await client.get([APIRestaurant].self, path: "/admin/restaurants")
         return api.map { $0.toRestaurant() }
     }
 
-    /// Restoranı sil (admin)
     func deleteRestaurant(id: String) async throws {
         try await client.delete(path: "/restaurants/\(id)")
     }
+
+    func toggleRestaurantActive(id: String) async throws -> Restaurant {
+        struct Empty: Encodable {}
+        let api = try await client.patch(
+            APIRestaurant.self,
+            path: "/admin/restaurants/\(id)/toggle",
+            encodable: Empty()
+        )
+        return api.toRestaurant()
+    }
 }
+

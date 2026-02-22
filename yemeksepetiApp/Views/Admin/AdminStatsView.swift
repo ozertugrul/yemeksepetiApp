@@ -26,10 +26,12 @@ struct AdminStatsView: View {
     }
     
     func loadStats() {
-        let ds = DataService()
-        ds.getAllRestaurantsForAdmin { restaurants in
-            self.totalRestaurants = restaurants.count
-            self.activeRestaurants = restaurants.filter { $0.isActive }.count
+        Task {
+            let restaurants = (try? await viewModel.adminAPI.fetchAllRestaurants()) ?? []
+            DispatchQueue.main.async {
+                self.totalRestaurants = restaurants.count
+                self.activeRestaurants = restaurants.filter { $0.isActive }.count
+            }
         }
     }
 }

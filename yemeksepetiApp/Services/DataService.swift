@@ -1,243 +1,197 @@
 import Foundation
 import Combine
-import FirebaseFirestore
 
+/// Thin adapter layer — routes all calls to the SQL API services.
+/// FirebaseFirestore has been fully removed.
 class DataService: ObservableObject {
-    private let db = Firestore.firestore()
     private let restaurantAPI = RestaurantAPIService()
-    private let adminAPI = AdminAPIService()
-    
+    private let adminAPI      = AdminAPIService()
+    private let userAPI       = UserAPIService()
+
+    /// In-memory card store (Cards API not yet on backend)
+    private var cardStore: [String: [SavedCard]] = [:]
+
     // MARK: - Restaurants
-    
+
     func fetchRestaurants(completion: @escaping ([Restaurant]) -> Void) {
-        guard !APIConfig.useSQLBackend else {
-            Task {
-                do {
-                    let list = try await restaurantAPI.fetchActive()
-                    DispatchQueue.main.async { completion(list) }
-                } catch {
-                    print("[DataService] API fetchRestaurants hata: \(error.localizedDescription)")
-                    DispatchQueue.main.async { completion([]) }
-                }
-            }
-            return
-        }
-        db.collection("restaurants").whereField("isActive", isEqualTo: true).getDocuments { snapshot, error in
-            guard let documents = snapshot?.documents, error == nil else {
-                print("Error fetching restaurants: \(error?.localizedDescription ?? "")")
-                completion([])
-                return
-            }
-            let restaurants = documents.compactMap { try? $0.data(as: Restaurant.self) }
-            completion(restaurants)
+        Task {
+            let list = (try? await restaurantAPI.fetchActive()) ?? []
+            DispatchQueue.main.async { completion(list) }
         }
     }
-    
+
     func getAllRestaurantsForAdmin(completion: @escaping ([Restaurant]) -> Void) {
-        guard !APIConfig.useSQLBackend else {
-            Task {
-                do {
-                    let list = try await adminAPI.fetchAllRestaurants()
-                    DispatchQueue.main.async { completion(list) }
-                } catch {
-                    print("[DataService] API getAllRestaurants hata: \(error.localizedDescription)")
-                    DispatchQueue.main.async { completion([]) }
-                }
-            }
-            return
-        }
-        db.collection("restaurants").getDocuments { snapshot, error in
-            guard let documents = snapshot?.documents else { return }
-            let restaurants = documents.compactMap { try? $0.data(as: Restaurant.self) }
-            completion(restaurants)
+        Task {
+            let list = (try? await adminAPI.fetchAllRestaurants()) ?? []
+            DispatchQueue.main.async { completion(list) }
         }
     }
-    
+
     func fetchRestaurant(id: String, completion: @escaping (Restaurant?) -> Void) {
-        db.collection("restaurants").document(id).getDocument { document, error in
-            if let document = document, document.exists {
-                let restaurant = try? document.data(as: Restaurant.self)
-                completion(restaurant)
-            } else {
-                completion(nil)
-            }
+        Task {
+            let r = try? await restaurantAPI.fetchDetail(id: id)
+            DispatchQueue.main.async { completion(r) }
         }
     }
 
-    // MARK: - Admin / Store Owner Operations
-    
     func createRestaurant(restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
-        do {
-            try db.collection("restaurants").document(restaurant.id).setData(from: restaurant, completion: completion)
-        } catch {
-            completion(error)
-        }
-    }
-
-    /// Store owner creates their own restaurant and links it to their user profile.
-    func createRestaurantForOwner(restaurant: Restaurant, ownerUid: String, completion: @escaping (Error?) -> Void) {
-        var owned = restaurant
-        // Ensure ownerId is set before saving
-        if owned.ownerId == nil { owned = Restaurant(id: owned.id, name: owned.name, ownerId: ownerUid,
-            description: owned.description, cuisineType: owned.cuisineType, imageUrl: owned.imageUrl,
-            rating: owned.rating, deliveryTime: owned.deliveryTime, minOrderAmount: owned.minOrderAmount,
-            menu: owned.menu, isActive: owned.isActive) }
-        do {
-            try db.collection("restaurants").document(owned.id).setData(from: owned) { [weak self] error in
-                if let error { completion(error); return }
-                // Link restaurant id to user profile
-                self?.db.collection("users").document(ownerUid).updateData([
-                    "managedRestaurantId": owned.id,
-                    "role": UserRole.storeOwner.rawValue
-                ], completion: completion)
+        Task {
+            do {
+                _ = try await restaurantAPI.createRestaurant(restaurant)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
             }
-        } catch {
-            completion(error)
         }
     }
 
-    /// Full restaurant update — used by both admin and store owners
-    func updateRestaurant(restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
-        do {
-            try db.collection("restaurants").document(restaurant.id).setData(from: restaurant, merge: true, completion: completion)
-        } catch {
-            completion(error)
+    func createRestaurantForOwner(restaurant: Restaurant, ownerUid: String, completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                _ = try await restaurantAPI.createRestaurant(restaurant)
+                try await adminAPI.updateUserRole(uid: ownerUid, role: .storeOwner)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
         }
     }
-    
-    func assignStoreOwner(uid: String, restaurantId: String, completion: @escaping (Error?) -> Void) {
-        let userRef = db.collection("users").document(uid)
-        
-        userRef.updateData([
-            "role": UserRole.storeOwner.rawValue,
-            "managedRestaurantId": restaurantId
-        ], completion: completion)
-        
-        // Also update restaurant to point to owner
-        db.collection("restaurants").document(restaurantId).updateData([
-            "ownerId": uid
-        ])
+
+    func updateRestaurant(restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                _ = try await restaurantAPI.updateRestaurant(restaurant)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
     }
-    
-    func updateRestaurantMenu(restaurantId: String, menu: [MenuItem], completion: @escaping (Error?) -> Void) { // Fixed typo: 'menu' parameter was missing type or updateData call was implicit
-         // Manual encoding for array of custom structs if needed, or re-save whole object
-         // To stay simple, we can save the whole object or partial update if we encoded MenuItems to [[String:Any]]
-         // Here we assume Restaurant model update
-         // db.collection("restaurants").document(restaurantId).updateData(["menu": ...])
-         
-         // Easier to just fetch, update local, save back for this prototype
-         // Or update specific field:
-         do {
-             let encodedMenu = try menu.map { try Firestore.Encoder().encode($0) }
-             db.collection("restaurants").document(restaurantId).updateData([
-                 "menu": encodedMenu
-             ], completion: completion)
-         } catch {
-             completion(error)
-         }
+
+    func assignStoreOwner(uid: String, restaurantId: String, completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                try await adminAPI.updateUserRole(uid: uid, role: .storeOwner)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
+    }
+
+    func updateRestaurantMenu(restaurantId: String, menu: [MenuItem], completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                for item in menu {
+                    try await restaurantAPI.upsertMenuItem(restaurantId: restaurantId, item: item)
+                }
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
     }
 
     func deleteRestaurant(restaurantId: String, completion: @escaping (Error?) -> Void) {
-        db.collection("restaurants").document(restaurantId).delete(completion: completion)
+        Task {
+            do {
+                try await adminAPI.deleteRestaurant(id: restaurantId)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
     }
 
     // MARK: - User Profile
 
     func updateUserProfile(uid: String, data: [String: Any], completion: @escaping (Error?) -> Void) {
-        db.collection("users").document(uid).updateData(data) { error in
-            DispatchQueue.main.async { completion(error) }
+        Task {
+            do {
+                _ = try await userAPI.updateMyProfile(
+                    displayName: data["displayName"] as? String,
+                    city: data["city"] as? String,
+                    phone: data["phone"] as? String
+                )
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
         }
     }
 
     // MARK: - Addresses
 
     func fetchAddresses(uid: String, completion: @escaping ([UserAddress]) -> Void) {
-        db.collection("users").document(uid).collection("addresses")
-            .getDocuments { snapshot, _ in
-                let addresses = snapshot?.documents.compactMap { try? $0.data(as: UserAddress.self) } ?? []
-                DispatchQueue.main.async { completion(addresses.sorted { $0.isDefault && !$1.isDefault }) }
-            }
+        Task {
+            let list = (try? await userAPI.fetchAddresses()) ?? []
+            DispatchQueue.main.async { completion(list) }
+        }
     }
 
     func saveAddress(uid: String, address: UserAddress, completion: @escaping (Error?) -> Void) {
-        do {
-            try db.collection("users").document(uid).collection("addresses")
-                .document(address.id).setData(from: address, completion: completion)
-        } catch { completion(error) }
+        Task {
+            do {
+                _ = try await userAPI.updateAddress(address)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                do {
+                    _ = try await userAPI.createAddress(address)
+                    DispatchQueue.main.async { completion(nil) }
+                } catch {
+                    DispatchQueue.main.async { completion(error) }
+                }
+            }
+        }
     }
 
     func deleteAddress(uid: String, addressId: String, completion: @escaping (Error?) -> Void) {
-        db.collection("users").document(uid).collection("addresses")
-            .document(addressId).delete(completion: completion)
+        Task {
+            do {
+                try await userAPI.deleteAddress(id: addressId)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
     }
 
-    // MARK: - Saved Cards
+    // MARK: - Cards (in-memory)
 
     func fetchCards(uid: String, completion: @escaping ([SavedCard]) -> Void) {
-        db.collection("users").document(uid).collection("cards")
-            .getDocuments { snapshot, _ in
-                let cards = snapshot?.documents.compactMap { try? $0.data(as: SavedCard.self) } ?? []
-                DispatchQueue.main.async { completion(cards) }
-            }
+        DispatchQueue.main.async { completion(self.cardStore[uid] ?? []) }
     }
 
     func saveCard(uid: String, card: SavedCard, completion: @escaping (Error?) -> Void) {
-        do {
-            try db.collection("users").document(uid).collection("cards")
-                .document(card.id).setData(from: card, completion: completion)
-        } catch { completion(error) }
+        var cards = cardStore[uid] ?? []
+        if let idx = cards.firstIndex(where: { $0.id == card.id }) { cards[idx] = card }
+        else { cards.append(card) }
+        cardStore[uid] = cards
+        DispatchQueue.main.async { completion(nil) }
     }
 
     func deleteCard(uid: String, cardId: String, completion: @escaping (Error?) -> Void) {
-        db.collection("users").document(uid).collection("cards")
-            .document(cardId).delete(completion: completion)
+        cardStore[uid]?.removeAll { $0.id == cardId }
+        DispatchQueue.main.async { completion(nil) }
     }
 
-    // MARK: - Coupons
+    // MARK: - Coupons (stub)
 
     func fetchCoupons(uid: String, completion: @escaping ([DiscountCoupon]) -> Void) {
-        db.collection("users").document(uid).collection("coupons")
-            .getDocuments { snapshot, _ in
-                let coupons = snapshot?.documents.compactMap { try? $0.data(as: DiscountCoupon.self) } ?? []
-                DispatchQueue.main.async { completion(coupons.sorted { !$0.isUsed && $1.isUsed }) }
-            }
+        DispatchQueue.main.async { completion([]) }
     }
 
     func saveCoupon(uid: String, coupon: DiscountCoupon, completion: @escaping (Error?) -> Void) {
-        do {
-            try db.collection("users").document(uid).collection("coupons")
-                .document(coupon.id).setData(from: coupon, completion: completion)
-        } catch { completion(error) }
+        DispatchQueue.main.async { completion(nil) }
     }
 
-    // MARK: - Notification Preferences
+    // MARK: - Notification Preferences (stub)
 
     func fetchNotificationPreferences(uid: String, completion: @escaping (NotificationPreferences) -> Void) {
-        db.collection("users").document(uid).getDocument { document, _ in
-            var prefs = NotificationPreferences()
-            if let data = document?.data()?["notificationPreferences"] as? [String: Any] {
-                prefs = NotificationPreferences(
-                    orderUpdates:    data["orderUpdates"] as? Bool ?? true,
-                    promotions:      data["promotions"] as? Bool ?? true,
-                    newRestaurants:  data["newRestaurants"] as? Bool ?? false,
-                    emailDigest:     data["emailDigest"] as? Bool ?? true
-                )
-            }
-            DispatchQueue.main.async { completion(prefs) }
-        }
+        DispatchQueue.main.async { completion(NotificationPreferences()) }
     }
 
     func saveNotificationPreferences(uid: String, prefs: NotificationPreferences, completion: @escaping (Error?) -> Void) {
-        let data: [String: Any] = [
-            "notificationPreferences": [
-                "orderUpdates":   prefs.orderUpdates,
-                "promotions":     prefs.promotions,
-                "newRestaurants": prefs.newRestaurants,
-                "emailDigest":    prefs.emailDigest
-            ]
-        ]
-        db.collection("users").document(uid).updateData(data) { error in
-            DispatchQueue.main.async { completion(error) }
-        }
+        DispatchQueue.main.async { completion(nil) }
     }
 }

@@ -1,5 +1,4 @@
 import SwiftUI
-import FirebaseFirestore
 
 // MARK: - Owner Tab
 

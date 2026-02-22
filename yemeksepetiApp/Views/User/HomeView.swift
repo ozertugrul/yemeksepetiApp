@@ -115,7 +115,7 @@ struct HomeView: View {
                 loadRestaurants()
                 refreshAddresses()
             }
-            .onReceive(viewModel.authService.$currentUser) { user in
+            .onReceive(viewModel.authService.$user) { user in
                 guard let uid = user?.id else {
                     savedAddresses = []; selectedAddress = nil; return
                 }

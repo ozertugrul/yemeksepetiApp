@@ -148,7 +148,7 @@ struct RegisterView: View {
         errorMessage = ""
         isLoading = true
         
-        viewModel.authService.register(email: trimmedEmail, password: password) { result in
+        viewModel.authService.register(email: trimmedEmail, password: password, displayName: "") { result in
             // AuthService guarantees main thread delivery
             self.isLoading = false
             switch result {

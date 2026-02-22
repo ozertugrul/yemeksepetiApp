@@ -34,7 +34,7 @@ class AppViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // Clear cart when user logs out or switches accounts
-        authService.$currentUser
+        authService.$user
             .sink { [weak self] user in
                 guard let self else { return }
                 let newId = user?.id
@@ -48,16 +48,12 @@ class AppViewModel: ObservableObject {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    var isAdmin: Bool { authService.userRole == .superAdmin }
-    var isStoreOwner: Bool { authService.userRole == .storeOwner }
+    var isAdmin: Bool { authService.user?.role == .superAdmin }
+    var isStoreOwner: Bool { authService.user?.role == .storeOwner }
 
     // ── Admin: Kullanıcı yönetimi ─────────────────────────────────────────────
 
     func fetchAllUsers(completion: @escaping ([AppUser], String?) -> Void) {
-        guard APIConfig.useSQLBackend else {
-            authService.fetchAllUsers(completion: completion)
-            return
-        }
         Task {
             do {
                 let users = try await adminAPI.fetchAllUsers()
@@ -69,10 +65,6 @@ class AppViewModel: ObservableObject {
     }
 
     func updateUserRole(uid: String, role: UserRole, completion: @escaping (Error?) -> Void) {
-        guard APIConfig.useSQLBackend else {
-            authService.updateUserRole(uid: uid, role: role, completion: completion)
-            return
-        }
         Task {
             do {
                 try await adminAPI.updateUserRole(uid: uid, role: role)
@@ -84,13 +76,35 @@ class AppViewModel: ObservableObject {
     }
 
     func deleteUser(uid: String, completion: @escaping (Error?) -> Void) {
-        guard APIConfig.useSQLBackend else {
-            authService.deleteUser(uid: uid, completion: completion)
-            return
-        }
         Task {
             do {
                 try await adminAPI.deleteUser(uid: uid)
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                DispatchQueue.main.async { completion(error) }
+            }
+        }
+    }
+
+    func createUser(email: String, password: String, displayName: String?,
+                    role: UserRole, completion: @escaping (AppUser?, Error?) -> Void) {
+        Task {
+            do {
+                let user = try await adminAPI.createUser(
+                    email: email, password: password,
+                    displayName: displayName, role: role
+                )
+                DispatchQueue.main.async { completion(user, nil) }
+            } catch {
+                DispatchQueue.main.async { completion(nil, error) }
+            }
+        }
+    }
+
+    func toggleRestaurantActive(id: String, completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                _ = try await adminAPI.toggleRestaurantActive(id: id)
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 DispatchQueue.main.async { completion(error) }

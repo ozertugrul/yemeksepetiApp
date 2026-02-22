@@ -3,18 +3,18 @@ import SwiftUI
 struct AdminUserListView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var searchQuery = ""
-    @State private var allUsers: [AppUser] = []      // full list loaded on appear
+    @State private var allUsers: [AppUser] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingRoleSheet = false
-    @State private var activeUser: AppUser?          // captured before dialog closes
+    @State private var activeUser: AppUser?
     @State private var showingRestaurantPicker = false
     @State private var availableRestaurants: [Restaurant] = []
     @State private var isLoadingRestaurants = false
     @State private var alertTitle = ""
     @State private var showingAlert = false
+    @State private var showingCreateUser = false       // ← YENİ
 
-    // Client-side instant filter
     private var filteredUsers: [AppUser] {
         let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
         return q.isEmpty ? allUsers : allUsers.filter { $0.email.lowercased().contains(q) }
@@ -45,7 +45,6 @@ struct AdminUserListView: View {
 
             Divider()
 
-            // ── Error banner ─────────────────────────────────────────────────
             if let errorMessage {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
@@ -57,7 +56,6 @@ struct AdminUserListView: View {
                 .background(Color.orange.opacity(0.1))
             }
 
-            // ── User list ────────────────────────────────────────────────────
             if isLoading && allUsers.isEmpty {
                 Spacer()
                 ProgressView("Kullanıcılar yükleniyor...")
@@ -86,7 +84,13 @@ struct AdminUserListView: View {
             }
         }
         .navigationTitle(allUsers.isEmpty ? "Kullanıcı Yönetimi" : "Kullanıcılar (\(allUsers.count))")
-        // ── Role action dialog ───────────────────────────────────────────────
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingCreateUser = true } label: {
+                    Image(systemName: "person.badge.plus")
+                }
+            }
+        }
         .confirmationDialog(
             activeUser.map { "İşlem: \($0.email)" } ?? "Kullanıcı İşlemleri",
             isPresented: $showingRoleSheet,
@@ -100,7 +104,6 @@ struct AdminUserListView: View {
                 Button("İptal", role: .cancel) { activeUser = nil }
             }
         }
-        // ── Restaurant picker sheet ──────────────────────────────────────────
         .sheet(isPresented: $showingRestaurantPicker) {
             RestaurantPickerView(
                 restaurants: availableRestaurants,
@@ -114,12 +117,18 @@ struct AdminUserListView: View {
                 showingRestaurantPicker = false
             }
         }
+        // ── Yeni kullanıcı oluşturma sayfası ────────────────────────────────
+        .sheet(isPresented: $showingCreateUser) {
+            AdminCreateUserSheet(viewModel: viewModel) {
+                loadAllUsers()
+            }
+        }
         .alert(alertTitle, isPresented: $showingAlert) {
             Button("Tamam", role: .cancel) {}
         }
         .onAppear { loadAllUsers() }
     }
-    
+
     // MARK: - Data Actions
 
     private func loadAllUsers() {
@@ -127,9 +136,7 @@ struct AdminUserListView: View {
         errorMessage = nil
         viewModel.fetchAllUsers { users, error in
             isLoading = false
-            if let error {
-                errorMessage = error
-            }
+            if let error { errorMessage = error }
             allUsers = users
         }
     }
@@ -147,7 +154,7 @@ struct AdminUserListView: View {
     }
 
     func fetchRestaurantsForPicker(for user: AppUser) {
-        activeUser = user        // capture before dialog dismisses
+        activeUser = user
         isLoadingRestaurants = true
         showingRestaurantPicker = true
         viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
@@ -181,10 +188,100 @@ struct AdminUserListView: View {
     }
 }
 
+// MARK: - AdminCreateUserSheet
+
+struct AdminCreateUserSheet: View {
+    @ObservedObject var viewModel: AppViewModel
+    let onCreated: () -> Void
+
+    @State private var email = ""
+    @State private var password = ""
+    @State private var displayName = ""
+    @State private var selectedRole: UserRole = .user
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
+
+    private var isValid: Bool {
+        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
+        password.count >= 6
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Kullanıcı Bilgileri") {
+                    TextField("E-posta *", text: $email)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .disableAutocorrection(true)
+                    SecureField("Şifre * (min 6 karakter)", text: $password)
+                    TextField("Ad Soyad (opsiyonel)", text: $displayName)
+                }
+
+                Section("Rol") {
+                    Picker("Rol", selection: $selectedRole) {
+                        Text("Kullanıcı").tag(UserRole.user)
+                        Text("Mağaza Sahibi").tag(UserRole.storeOwner)
+                        Text("Süper Admin").tag(UserRole.superAdmin)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).foregroundColor(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Yeni Kullanıcı")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Button("Oluştur") { createUser() }
+                            .font(Font.body.weight(.semibold))
+                            .disabled(!isValid)
+                    }
+                }
+            }
+        }
+    }
+
+    private func createUser() {
+        guard isValid else { return }
+        isLoading = true
+        errorMessage = nil
+        let dn = displayName.trimmingCharacters(in: .whitespaces)
+        viewModel.createUser(
+            email: email.trimmingCharacters(in: .whitespaces),
+            password: password,
+            displayName: dn.isEmpty ? nil : dn,
+            role: selectedRole
+        ) { _, error in
+            isLoading = false
+            if let error {
+                errorMessage = error.localizedDescription
+            } else {
+                onCreated()
+                dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - UserRow
+
 struct UserRow: View {
     let user: AppUser
     let onEdit: () -> Void
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
@@ -206,15 +303,17 @@ struct UserRow: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     func iconForRole(_ role: UserRole) -> String {
         switch role {
         case .superAdmin: return "shield.fill"
         case .storeOwner: return "briefcase.fill"
-        case .user: return "person.fill"
+        case .user:       return "person.fill"
         }
     }
 }
+
+// MARK: - RestaurantPickerView
 
 struct RestaurantPickerView: View {
     let restaurants: [Restaurant]
@@ -244,7 +343,6 @@ struct RestaurantPickerView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
-                        // ── Create new ────────────────────────────────────────
                         Section {
                             Button { showingCreateSheet = true } label: {
                                 HStack(spacing: 12) {
@@ -261,7 +359,6 @@ struct RestaurantPickerView: View {
                             }
                         }
 
-                        // ── Existing restaurants ──────────────────────────────
                         if !restaurants.isEmpty {
                             Section(header: Text("Mevcut Mağazalar")) {
                                 ForEach(restaurants) { restaurant in
@@ -274,7 +371,7 @@ struct RestaurantPickerView: View {
                                                 Text(restaurant.name)
                                                     .foregroundColor(.primary).fontWeight(.medium)
                                                 if let ownerId = restaurant.ownerId {
-                                                    Text("Sahip UID: \(ownerId.prefix(12))...")
+                                                    Text("Sahip: \(ownerId.prefix(12))…")
                                                         .font(.caption).foregroundColor(.secondary)
                                                 } else {
                                                     Text("Sahipsiz")
