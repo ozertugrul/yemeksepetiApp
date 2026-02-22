@@ -152,9 +152,11 @@ struct LoginView: View {
     private func signInAnonymously() {
         isLoading = true
         viewModel.authService.signInAnonymously { result in
-            isLoading = false
-            if case .failure(let error) = result {
-                errorMessage = error.localizedDescription
+            DispatchQueue.main.async {
+                isLoading = false
+                if case .failure(let error) = result {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }

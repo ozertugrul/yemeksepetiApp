@@ -117,6 +117,11 @@ class AuthService: ObservableObject {
     // MARK: - Fetch Profile from SQL API
 
     func fetchUserProfileFromAPI(uid: String, completion: ((AppUser?) -> Void)? = nil) {
+        // Anonymous users have no backend account — keep the local guest AppUser as-is.
+        if Auth.auth().currentUser?.isAnonymous == true {
+            completion?(self.user)
+            return
+        }
         Task {
             do {
                 let profile = try await userAPI.fetchMyProfile()
