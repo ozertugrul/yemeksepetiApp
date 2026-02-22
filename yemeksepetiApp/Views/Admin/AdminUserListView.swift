@@ -17,6 +17,8 @@ struct AdminUserListView: View {
     @State private var showingQuickAssign = false      // ← Email ile yetki ata
     @State private var showingDeleteAllConfirm = false // ← Tüm kullanıcıları sil
     @State private var isDeletingAll = false
+    /// Tüm restoranları id → Restaurant haritası (storeOwner badge'i için)
+    @State private var restaurantMap: [String: Restaurant] = [:]
 
     private var filteredUsers: [AppUser] {
         let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
@@ -78,10 +80,14 @@ struct AdminUserListView: View {
                 Spacer()
             } else {
                 List(filteredUsers) { user in
-                    UserRow(user: user, onEdit: {
-                        activeUser = user
-                        showingRoleSheet = true
-                    })
+                    UserRow(
+                        user: user,
+                        restaurant: user.managedRestaurantId.flatMap { restaurantMap[$0] },
+                        onEdit: {
+                            activeUser = user
+                            showingRoleSheet = true
+                        }
+                    )
                 }
                 .listStyle(.plain)
             }
@@ -171,10 +177,34 @@ struct AdminUserListView: View {
     private func loadAllUsers() {
         isLoading = true
         errorMessage = nil
+        // Kullanıcılar ve restoranlar paralel çekilir
+        let group = DispatchGroup()
+        var fetchedUsers: [AppUser] = []
+        var fetchedRestaurants: [Restaurant] = []
+        var fetchError: String?
+
+        group.enter()
         viewModel.fetchAllUsers { users, error in
+            fetchedUsers = users
+            if let error { fetchError = error }
+            group.leave()
+        }
+
+        group.enter()
+        viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
+            fetchedRestaurants = restaurants
+            group.leave()
+        }
+
+        group.notify(queue: .main) {
             isLoading = false
-            if let error { errorMessage = error }
-            allUsers = users
+            if let error = fetchError { errorMessage = error }
+            allUsers = fetchedUsers
+            restaurantMap = Dictionary(uniqueKeysWithValues:
+                fetchedRestaurants.map { ($0.id, $0) }
+            )
+            // Picker için de hazır tut
+            availableRestaurants = fetchedRestaurants
         }
     }
 
@@ -192,11 +222,17 @@ struct AdminUserListView: View {
 
     func fetchRestaurantsForPicker(for user: AppUser) {
         activeUser = user
-        isLoadingRestaurants = true
-        showingRestaurantPicker = true
-        viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
-            availableRestaurants = restaurants
-            isLoadingRestaurants = false
+        if !availableRestaurants.isEmpty {
+            // Zaten loadAllUsers sırasında yüklendi — tekrar istek atma
+            showingRestaurantPicker = true
+        } else {
+            isLoadingRestaurants = true
+            showingRestaurantPicker = true
+            viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
+                availableRestaurants = restaurants
+                restaurantMap = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
+                isLoadingRestaurants = false
+            }
         }
     }
 
@@ -466,35 +502,118 @@ struct AdminCreateUserSheet: View {
 
 struct UserRow: View {
     let user: AppUser
+    var restaurant: Restaurant? = nil
     let onEdit: () -> Void
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(user.email)
-                    .font(.headline)
-                HStack {
-                    Image(systemName: iconForRole(user.role))
-                    Text(user.role.rawValue)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        HStack(spacing: 12) {
+            // ── Rol ikonu (avatar)
+            ZStack {
+                Circle()
+                    .fill(roleColor(user.role).opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: iconForRole(user.role))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(roleColor(user.role))
+            }
+
+            // ── İçerik
+            VStack(alignment: .leading, spacing: 3) {
+                // Ad (varsa) + e-posta
+                if let name = user.fullName, !name.isEmpty {
+                    Text(name)
+                        .font(.subheadline).fontWeight(.semibold)
+                    Text(user.email)
+                        .font(.caption).foregroundColor(.secondary)
+                } else {
+                    Text(user.email)
+                        .font(.subheadline).fontWeight(.semibold)
+                }
+
+                // Rol etiketi
+                HStack(spacing: 4) {
+                    Text(roleLabel(user.role))
+                        .font(.caption2).fontWeight(.medium)
+                        .foregroundColor(roleColor(user.role))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(roleColor(user.role).opacity(0.1))
+                        .clipShape(Capsule())
+
+                    // ── Mağaza rozeti (yalnızca storeOwner)
+                    if user.role == .storeOwner, let r = restaurant {
+                        restaurantBadge(r)
+                    } else if user.role == .storeOwner, user.managedRestaurantId != nil {
+                        // Restoran haritasında henüz yüklenmemiş
+                        Label("Mağaza yükleniyor…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
                 }
             }
+
             Spacer()
+
             Button(action: onEdit) {
-                Image(systemName: "pencil.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.blue)
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
             }
+            .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+    }
+
+    // ── Mağaza rozeti: ad + disambiguator + kısa ID  ─────────────────────────
+    @ViewBuilder
+    private func restaurantBadge(_ r: Restaurant) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "storefront.fill")
+                .font(.caption2)
+            // İsim
+            Text(r.name)
+                .font(.caption2).fontWeight(.medium)
+                .lineLimit(1)
+            // Şehir (belirsizliği gider; aynı şehirdeyse mutfak türü eklenir)
+            if let city = r.city, !city.isEmpty {
+                Text("· \(city)")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            // Mutfak türü (ikinci belirsizlik giderici)
+            if !r.cuisineType.isEmpty {
+                Text("· \(r.cuisineType)")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            // Kısa ID (mutlak tekil tanımlayıcı — son 5 kr)
+            Text("#\(r.id.suffix(5))")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.secondary.opacity(0.7))
+        }
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Color.orange.opacity(0.1))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.orange.opacity(0.25), lineWidth: 0.5))
     }
 
     func iconForRole(_ role: UserRole) -> String {
         switch role {
         case .superAdmin: return "shield.fill"
-        case .storeOwner: return "briefcase.fill"
+        case .storeOwner: return "storefront.fill"
         case .user:       return "person.fill"
+        }
+    }
+
+    func roleLabel(_ role: UserRole) -> String {
+        switch role {
+        case .superAdmin: return "Yönetici"
+        case .storeOwner: return "Mağaza Sahibi"
+        case .user:       return "Kullanıcı"
+        }
+    }
+
+    func roleColor(_ role: UserRole) -> Color {
+        switch role {
+        case .superAdmin: return .purple
+        case .storeOwner: return .orange
+        case .user:       return .blue
         }
     }
 }
