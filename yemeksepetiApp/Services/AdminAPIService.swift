@@ -26,6 +26,17 @@ struct APIAdminUser: Decodable, Identifiable {
     }
 }
 
+// MARK: - AdminStats
+
+struct AdminStats: Decodable {
+    var totalUsers: Int
+    var storeOwnerCount: Int
+    var totalRestaurants: Int
+    var activeRestaurants: Int
+    var totalOrders: Int
+    var todayOrders: Int
+}
+
 // MARK: - AdminAPIService
 
 struct AdminAPIService {
@@ -68,6 +79,26 @@ struct AdminAPIService {
         try await client.delete(path: "/admin/users/\(uid)")
     }
 
+    // ── Co-owner Desteği ──────────────────────────────────────────────────────
+
+    /// Kullanıcıyı mevcut bir restorana ortak sahip olarak atar.
+    /// - restaurantId: nil gönderilirse bağ koparılır.
+    func assignManagedRestaurant(uid: String, restaurantId: String?) async throws -> AppUser {
+        struct Body: Encodable { var restaurantId: String? }
+        let api = try await client.patch(
+            APIAdminUser.self,
+            path: "/admin/users/\(uid)/managed-restaurant",
+            encodable: Body(restaurantId: restaurantId)
+        )
+        return api.toAppUser()
+    }
+
+    // ── İstatistikler ─────────────────────────────────────────────────────────
+
+    func fetchStats() async throws -> AdminStats {
+        return try await client.get(AdminStats.self, path: "/admin/stats")
+    }
+
     // ── Restoran Yönetimi ─────────────────────────────────────────────────────
 
     func fetchAllRestaurants() async throws -> [Restaurant] {
@@ -89,4 +120,3 @@ struct AdminAPIService {
         return api.toRestaurant()
     }
 }
-

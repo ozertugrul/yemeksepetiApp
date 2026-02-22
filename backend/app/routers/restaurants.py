@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import FirebaseUser, get_current_user, get_optional_user, require_role
 from app.core.database import get_db
-from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository
+from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository, SQLUserRepository
 from app.schemas.schemas import (
     MenuItemCreate, MenuItemOut,
     RestaurantCreate, RestaurantOut,
@@ -90,7 +90,21 @@ async def get_my_restaurant(
     db: AsyncSession = Depends(get_db),
     user: FirebaseUser = Depends(require_role("storeOwner", "admin")),
 ):
+    """
+    Sahip veya ortak sahip olunan restoranı döndürür.
+    Önce kullanıcının managed_restaurant_id'sini kullanır (co-owner desteği),
+    bulunamazsa owner_id ile geriye dönük arama yapar.
+    """
     repo = SQLRestaurantRepository(db)
+    user_repo = SQLUserRepository(db)
+
+    db_user = await user_repo.get_by_id(user.uid)
+    if db_user and db_user.managed_restaurant_id:
+        r = await repo.get_by_id(db_user.managed_restaurant_id)
+        if r:
+            return _orm_to_schema(r, include_menu=True)
+
+    # Fallback: primary owner_id ile ara
     r = await repo.get_by_owner(user.uid)
     if not r:
         raise HTTPException(status_code=404, detail="Restoranınız bulunamadı.")

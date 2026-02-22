@@ -2,37 +2,97 @@ import SwiftUI
 
 struct AdminStatsView: View {
     @ObservedObject var viewModel: AppViewModel
-    
-    // Stats state
-    @State private var totalRestaurants = 0
-    @State private var activeRestaurants = 0
-    @State private var totalUsers = 0 // Mock, as fetching all users is expensive/not standard content
-    
+
+    @State private var stats: AdminStats? = nil
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
     var body: some View {
         ScrollView {
-                VStack(spacing: 20) {
-                    StatCard(title: "Toplam Restoran", value: "\(totalRestaurants)", icon: "building.2.crop.circle", color: .blue)
-                    
-                    StatCard(title: "Aktif Restoranlar", value: "\(activeRestaurants)", icon: "checkmark.circle", color: .green)
-                    
-                    StatCard(title: "Tahmini Kullanıcı", value: "150+", icon: "person.3.fill", color: .orange)
-                    
-                    StatCard(title: "Günlük Sipariş", value: "24", icon: "cart.fill", color: .purple)
+            VStack(spacing: 20) {
+                if isLoading {
+                    ProgressView("İstatistikler yükleniyor...")
+                        .padding(.top, 60)
+                } else if let msg = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 40)).foregroundColor(.orange)
+                        Text(msg).font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
+                        Button("Tekrar Dene") { loadStats() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.top, 60)
+                } else if let s = stats {
+                    // ── Kullanıcılar ─────────────────────────────────────────
+                    SectionHeader(title: "Kullanıcılar")
+                    HStack(spacing: 16) {
+                        StatCard(title: "Toplam Kullanıcı", value: "\(s.totalUsers)",
+                                 icon: "person.3.fill", color: .blue)
+                        StatCard(title: "Mağaza Sahibi", value: "\(s.storeOwnerCount)",
+                                 icon: "storefront.fill", color: .orange)
+                    }
+
+                    // ── Restoranlar ───────────────────────────────────────────
+                    SectionHeader(title: "Restoranlar")
+                    HStack(spacing: 16) {
+                        StatCard(title: "Toplam Mağaza", value: "\(s.totalRestaurants)",
+                                 icon: "building.2.crop.circle", color: .indigo)
+                        StatCard(title: "Aktif Mağaza", value: "\(s.activeRestaurants)",
+                                 icon: "checkmark.circle.fill", color: .green)
+                    }
+
+                    // ── Siparişler ────────────────────────────────────────────
+                    SectionHeader(title: "Siparişler")
+                    HStack(spacing: 16) {
+                        StatCard(title: "Bugünkü Sipariş", value: "\(s.todayOrders)",
+                                 icon: "cart.badge.plus", color: .purple)
+                        StatCard(title: "Toplam Sipariş", value: "\(s.totalOrders)",
+                                 icon: "cart.fill", color: .teal)
+                    }
+                } else {
+                    Color.clear.onAppear { loadStats() }
                 }
-                .padding()
             }
-            .navigationTitle("İstatistikler")
-            .onAppear(perform: loadStats)
+            .padding()
+        }
+        .navigationTitle("İstatistikler")
+        .onAppear { if stats == nil { loadStats() } }
+        .refreshable { loadStats() }
     }
-    
-    func loadStats() {
+
+    private func loadStats() {
+        isLoading = true
+        errorMessage = nil
         Task {
-            let restaurants = (try? await viewModel.adminAPI.fetchAllRestaurants()) ?? []
-            DispatchQueue.main.async {
-                self.totalRestaurants = restaurants.count
-                self.activeRestaurants = restaurants.filter { $0.isActive }.count
+            do {
+                let s = try await viewModel.adminAPI.fetchStats()
+                await MainActor.run {
+                    self.stats = s
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "İstatistikler alınamadı: \(error.localizedDescription)"
+                    self.isLoading = false
+                }
             }
         }
+    }
+}
+
+// MARK: - SectionHeader
+
+private struct SectionHeader: View {
+    let title: String
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
     }
 }
 
@@ -41,29 +101,28 @@ struct StatCard: View {
     let value: String
     let icon: String
     let color: Color
-    
+
     var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.system(size: 40))
-                .foregroundColor(color)
-                .padding()
-                .background(color.opacity(0.1))
-                .cornerRadius(12)
-            
-            VStack(alignment: .leading) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                Text(value)
-                    .font(.title).bold()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundColor(color)
+                    .padding(10)
+                    .background(color.opacity(0.12))
+                    .cornerRadius(10)
+                Spacer()
             }
-            
-            Spacer()
+            Text(value)
+                .font(.system(size: 32, weight: .bold, design: .rounded))
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
-        .cornerRadius(15)
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 3)
     }
 }

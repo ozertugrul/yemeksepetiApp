@@ -6,14 +6,17 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func as sql_func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import FirebaseUser, _init_firebase_app, require_role
 from app.core.database import get_db
+from app.models.orm_models import OrderORM, RestaurantORM, UserORM
 from app.repositories.sql_repos import SQLRestaurantRepository, SQLUserRepository
 from app.schemas.schemas import RestaurantOut, UserOut
 
@@ -120,13 +123,25 @@ async def update_user_role(
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
-    # storeOwner'dan farklı bir role düşürülüyorsa → restoranını pasife çek + sahipsizleştir
+    # storeOwner'dan farklı bir role düşürülüyorsa
     if user.role == "storeOwner" and role != "storeOwner":
-        rest_repo = SQLRestaurantRepository(db)
-        restaurant = await rest_repo.get_by_owner(uid)
-        if restaurant:
-            await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
-        # Kullanıcının managed_restaurant_id'sini de temizle
+        managed_rest_id = user.managed_restaurant_id
+        if managed_rest_id:
+            # Bu restorana bağlı başka sahip var mı? (co-owner kontrolü)
+            co_owners_result = await db.execute(
+                sa_select(UserORM).where(
+                    UserORM.managed_restaurant_id == managed_rest_id,
+                    UserORM.id != uid,
+                )
+            )
+            co_owners = co_owners_result.scalars().all()
+            if not co_owners:
+                # Son sahip → restoranı pasife al ve sahipsizleştir
+                rest_repo = SQLRestaurantRepository(db)
+                restaurant = await rest_repo.get_by_id(managed_rest_id)
+                if restaurant:
+                    await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
+        # Kullanıcının managed_restaurant_id'sini temizle
         await user_repo.update(uid, {"managed_restaurant_id": None})
 
     u = await user_repo.update(uid, {"role": role})
@@ -150,11 +165,21 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
     # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
-    # Restoranı sahipsizleştir + pasife al (siparişler kaybolmasın).
+    # Restoranı sahipsizleştir + pasife al (siparişler kaybolmasın) — sadece son sahipse.
     rest_repo = SQLRestaurantRepository(db)
-    restaurant = await rest_repo.get_by_owner(uid)
-    if restaurant:
-        await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
+    managed_rest_id = user.managed_restaurant_id
+    if managed_rest_id:
+        co_owners_result = await db.execute(
+            sa_select(UserORM).where(
+                UserORM.managed_restaurant_id == managed_rest_id,
+                UserORM.id != uid,
+            )
+        )
+        co_owners = co_owners_result.scalars().all()
+        if not co_owners:
+            restaurant = await rest_repo.get_by_id(managed_rest_id)
+            if restaurant:
+                await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
 
     # PostgreSQL'den sil:
     # 1. Önce kullanıcının siparişlerini sil (orders.user_id NOT NULL FK kısıtı)
@@ -201,3 +226,93 @@ async def toggle_restaurant_active(
     updated = await repo.update(restaurant_id, {"is_active": not r.is_active})
     return _restaurant_schema(updated)
 
+
+# ── Ortak Sahip Ata ───────────────────────────────────────────────────────────
+
+class ManagedRestaurantBody(BaseModel):
+    restaurant_id: Optional[str] = None   # None → ilişkiyi kes
+
+
+@router.patch("/users/{uid}/managed-restaurant", response_model=UserOut)
+async def assign_managed_restaurant(
+    uid: str,
+    body: ManagedRestaurantBody,
+    db: AsyncSession = Depends(get_db),
+    _admin: FirebaseUser = Depends(require_role("admin")),
+):
+    """
+    Bir kullanıcıya ortak sahip olarak mevcut bir restoran atar.
+    - Kullanıcı otomatik olarak storeOwner yapılır.
+    - restaurant_id=None gönderilirse bağ koparılır ve kullanıcı 'user' rolüne düşürülür.
+    """
+    user_repo = SQLUserRepository(db)
+    user = await user_repo.get_by_id(uid)
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+    if body.restaurant_id:
+        rest_repo = SQLRestaurantRepository(db)
+        restaurant = await rest_repo.get_by_id(body.restaurant_id)
+        if not restaurant:
+            raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
+        u = await user_repo.update(uid, {
+            "managed_restaurant_id": body.restaurant_id,
+            "role": "storeOwner",
+        })
+    else:
+        # Bağ kopuyorsa: co-owner kontrolü yaparak restoranı pasife almaya gerek yok
+        # (sadece bu kullanıcının bağını kopar)
+        u = await user_repo.update(uid, {
+            "managed_restaurant_id": None,
+            "role": "user",
+        })
+
+    return _user_schema(u)
+
+
+# ── İstatistikler ─────────────────────────────────────────────────────────────
+
+@router.get("/stats")
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    _user: FirebaseUser = Depends(require_role("admin")),
+) -> Dict[str, Any]:
+    """Gerçek zamanlı admin istatistikleri."""
+    # Kullanıcı sayıları (role'e göre grupla)
+    role_result = await db.execute(
+        sa_select(UserORM.role, sql_func.count(UserORM.id)).group_by(UserORM.role)
+    )
+    role_counts: Dict[str, int] = dict(role_result.all())
+    total_users = sum(role_counts.values())
+    store_owner_count = role_counts.get("storeOwner", 0)
+
+    # Restoran sayıları
+    rest_result = await db.execute(
+        sa_select(RestaurantORM.is_active, sql_func.count(RestaurantORM.id))
+        .group_by(RestaurantORM.is_active)
+    )
+    rest_counts: Dict[bool, int] = dict(rest_result.all())
+    total_restaurants = sum(rest_counts.values())
+    active_restaurants = rest_counts.get(True, 0)
+
+    # Toplam sipariş
+    total_orders_result = await db.execute(
+        sa_select(sql_func.count(OrderORM.id))
+    )
+    total_orders: int = total_orders_result.scalar() or 0
+
+    # Bugünkü sipariş (UTC)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_orders_result = await db.execute(
+        sa_select(sql_func.count(OrderORM.id)).where(OrderORM.created_at >= today_start)
+    )
+    today_orders: int = today_orders_result.scalar() or 0
+
+    return {
+        "totalUsers": total_users,
+        "storeOwnerCount": store_owner_count,
+        "totalRestaurants": total_restaurants,
+        "activeRestaurants": active_restaurants,
+        "totalOrders": total_orders,
+        "todayOrders": today_orders,
+    }

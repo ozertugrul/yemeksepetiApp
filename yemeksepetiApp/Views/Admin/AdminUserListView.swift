@@ -17,6 +17,7 @@ struct AdminUserListView: View {
     @State private var showingQuickAssign = false      // ← Email ile yetki ata
     @State private var showingDeleteAllConfirm = false // ← Tüm kullanıcıları sil
     @State private var isDeletingAll = false
+    @State private var showingCoOwnerPicker = false    // ← Ortak sahip ata
     /// Tüm restoranları id → Restaurant haritası (storeOwner badge'i için)
     @State private var restaurantMap: [String: Restaurant] = [:]
 
@@ -125,6 +126,9 @@ struct AdminUserListView: View {
             if let user = activeUser {
                 Button("Süper Admin Yap") { updateUserRole(uid: user.id, role: .superAdmin) }
                 Button("Mağaza Sahibi Yap") { updateUserRole(uid: user.id, role: .storeOwner) }
+                Button("Ortak Sahip Yap") {
+                    showingCoOwnerPicker = true
+                }
                 Button("Normal Kullanıcı Yap") { updateUserRole(uid: user.id, role: .user) }
                 Button("Kullanıcıyı Sil", role: .destructive) { deleteUser(uid: user.id) }
                 Button("İptal", role: .cancel) { activeUser = nil }
@@ -153,6 +157,19 @@ struct AdminUserListView: View {
         .sheet(isPresented: $showingQuickAssign) {
             AdminQuickRoleAssignSheet(allUsers: allUsers) { uid, role in
                 updateUserRole(uid: uid, role: role)
+            }
+        }
+        // ── Ortak sahip ata ───────────────────────────────────────────────────
+        .sheet(isPresented: $showingCoOwnerPicker) {
+            CoOwnerPickerSheet(
+                restaurants: availableRestaurants,
+                isLoading: isLoadingRestaurants,
+                userEmail: activeUser?.email ?? ""
+            ) { restaurantId in
+                if let user = activeUser {
+                    assignCoOwner(uid: user.id, restaurantId: restaurantId)
+                }
+                showingCoOwnerPicker = false
             }
         }
         // ── Tüm kullanıcıları sil onayı ──────────────────────────────────────
@@ -245,6 +262,24 @@ struct AdminUserListView: View {
                 loadAllUsers()
             }
             showingAlert = true
+        }
+    }
+
+    func assignCoOwner(uid: String, restaurantId: String) {
+        Task {
+            do {
+                _ = try await viewModel.adminAPI.assignManagedRestaurant(uid: uid, restaurantId: restaurantId)
+                await MainActor.run {
+                    alertTitle = "Ortak sahip başarıyla atandı."
+                    showingAlert = true
+                    loadAllUsers()
+                }
+            } catch {
+                await MainActor.run {
+                    alertTitle = "Hata: \(error.localizedDescription)"
+                    showingAlert = true
+                }
+            }
         }
     }
 
@@ -825,6 +860,75 @@ struct AdminCreateRestaurantForUserSheet: View {
             } else {
                 onCreated(newId)
                 dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - CoOwnerPickerSheet
+
+/// Mevcut bir restoranı seçerek kullanıcıyı ortak sahip yapar.
+struct CoOwnerPickerSheet: View {
+    let restaurants: [Restaurant]
+    let isLoading: Bool
+    let userEmail: String
+    let onSelect: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if isLoading {
+                    ProgressView("Restoranlar yükleniyor...")
+                } else if restaurants.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "building.2.slash").font(.system(size: 40)).foregroundColor(.gray)
+                        Text("Henüz mağaza yok").foregroundColor(.secondary)
+                    }
+                } else {
+                    List(restaurants) { restaurant in
+                        Button {
+                            onSelect(restaurant.id)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(restaurant.name).fontWeight(.semibold).foregroundColor(.primary)
+                                HStack(spacing: 6) {
+                                    if let city = restaurant.city {
+                                        Text(city).font(.caption).foregroundColor(.secondary)
+                                        Text("·").font(.caption).foregroundColor(.secondary)
+                                    }
+                                    Text(restaurant.cuisineType).font(.caption).foregroundColor(.secondary)
+                                    if !restaurant.isActive {
+                                        Text("· Pasif").font(.caption).foregroundColor(.red)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Mağaza Seç")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                VStack(spacing: 0) {
+                    Text("\(userEmail) kullanıcısını ortak sahip yapacaksınız.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                    Divider()
+                }
+                .background(Color(.systemGroupedBackground))
             }
         }
     }
