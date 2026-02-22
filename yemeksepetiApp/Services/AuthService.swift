@@ -10,11 +10,18 @@ class AuthService: ObservableObject {
     @Published var errorMessage: String?
 
     private let userAPI = UserAPIService()
+    /// register() sırasında addStateDidChangeListener'dan gelen örtüşen
+    /// fetchUserProfileFromAPI çağrısını engeller.
+    private var suppressNextListenerFetch = false
 
     init() {
         _ = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
             guard let self else { return }
             if let firebaseUser {
+                if self.suppressNextListenerFetch {
+                    self.suppressNextListenerFetch = false
+                    return
+                }
                 self.fetchUserProfileFromAPI(uid: firebaseUser.uid)
             } else {
                 DispatchQueue.main.async { self.user = nil }
@@ -37,14 +44,21 @@ class AuthService: ObservableObject {
                 return
             }
             guard let firebaseUser = result?.user else { return }
+
+            // Firebase login başarılı — hemen minimal AppUser ile devam et
+            let fallbackUser = AppUser(
+                id: firebaseUser.uid,
+                email: firebaseUser.email ?? email,
+                role: .user
+            )
+
+            // API'den profil çek; başarısız olursa Firebase verileriyle yaşa
             self.fetchUserProfileFromAPI(uid: firebaseUser.uid) { appUser in
                 DispatchQueue.main.async {
                     self.isLoading = false
-                    if let appUser { completion(.success(appUser)) }
-                    else {
-                        completion(.failure(NSError(domain: "AuthService", code: -1,
-                                                    userInfo: [NSLocalizedDescriptionKey: "Profil alınamadı"])))
-                    }
+                    let resolvedUser = appUser ?? fallbackUser
+                    self.user = resolvedUser
+                    completion(.success(resolvedUser))
                 }
             }
         }
@@ -54,9 +68,12 @@ class AuthService: ObservableObject {
 
     func register(email: String, password: String, displayName: String, completion: @escaping (Result<AppUser, Error>) -> Void) {
         isLoading = true
+        // Listener'dan gelen örtüşen fetch'i engelle — biz kendimiz yöneteceğiz
+        suppressNextListenerFetch = true
         Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
             guard let self else { return }
             if let error {
+                self.suppressNextListenerFetch = false
                 DispatchQueue.main.async {
                     self.isLoading = false
                     self.errorMessage = error.localizedDescription
@@ -66,42 +83,34 @@ class AuthService: ObservableObject {
             }
             guard let firebaseUser = result?.user else { return }
 
-            // Set Firebase display name (async, fire-and-forget)
+            // Firebase profil adını set et (fire-and-forget)
             let changeRequest = firebaseUser.createProfileChangeRequest()
             changeRequest.displayName = displayName
             changeRequest.commitChanges(completion: nil)
 
-            // Create backend user row, sync displayName, then fetch canonical profile
+            // Hemen fallback user — API başarısız olsa bile kayıt tamamlanmış sayılır
+            let fallbackUser = AppUser(
+                id: firebaseUser.uid,
+                email: email,
+                role: .user,
+                fullName: displayName
+            )
+
             Task {
+                // Tek API çağrısı: GET /users/me hem oluşturur hem döndürür
+                // Ardından displayName'i PUT ile yaz
                 do {
-                    // GET /users/me auto-creates the PostgreSQL row
-                    _ = try await self.userAPI.fetchMyProfile()
-                    // Push displayName into PostgreSQL
+                    _ = try await self.userAPI.fetchMyProfile()   // PG satırını oluştur
                     if !displayName.trimmingCharacters(in: .whitespaces).isEmpty {
                         _ = try? await self.userAPI.updateMyProfile(displayName: displayName)
                     }
-                    // Fetch updated profile
-                    let profile = try await self.userAPI.fetchMyProfile()
-                    let appUser = AppUser(
-                        id: firebaseUser.uid,
-                        email: profile.email ?? email,
-                        role: Self.mapAPIRole(profile.role),
-                        managedRestaurantId: profile.managedRestaurantId,
-                        fullName: profile.displayName ?? displayName,
-                        phone: profile.phone,
-                        city: profile.city
-                    )
-                    DispatchQueue.main.async {
-                        self.isLoading = false
-                        self.user = appUser
-                        completion(.success(appUser))
-                    }
                 } catch {
-                    DispatchQueue.main.async {
-                        self.isLoading = false
-                        self.errorMessage = error.localizedDescription
-                        completion(.failure(error))
-                    }
+                    // Backend geçici kapalıysa sessizce geç — fallback user yeterli
+                }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    self.user = fallbackUser
+                    completion(.success(fallbackUser))
                 }
             }
         }

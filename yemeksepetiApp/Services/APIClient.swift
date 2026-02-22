@@ -44,7 +44,7 @@ actor APIClient {
 
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForRequest = 40   // Koyeb cold-start ≤ 40s
         self.session = URLSession(configuration: config)
         self.decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
