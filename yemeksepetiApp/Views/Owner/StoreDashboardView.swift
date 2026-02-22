@@ -103,12 +103,12 @@ struct StoreDashboardView: View {
 
     private func loadRestaurant() {
         isLoading = true
-        guard let rid = viewModel.authService.currentUser?.managedRestaurantId else {
-            isLoading = false; return
-        }
-        viewModel.dataService.fetchRestaurant(id: rid) { fetched in
+        // GET /restaurants/my — token üzerinden doğrudan sahip restoranı döndürür.
+        // managedRestaurantId'ye bağımlı olmaz, logout/login sonrası da çalışır.
+        viewModel.dataService.fetchMyRestaurant { fetched in
             restaurant = fetched
             isLoading = false
+            guard let rid = fetched?.id else { return }
             // Start persistent real-time listener for orders
             ordersListenerReg?.remove()
             ordersListenerReg = viewModel.orderService.listenRestaurantOrders(restaurantId: rid) { orders in

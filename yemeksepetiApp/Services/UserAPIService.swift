@@ -10,6 +10,12 @@ struct APIUserProfile: Decodable {
     var city: String?
     var phone: String?
     var managedRestaurantId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, email, role, city, phone
+        case displayName          = "display_name"
+        case managedRestaurantId  = "managed_restaurant_id"
+    }
 }
 
 struct APIUserAddress: Decodable {

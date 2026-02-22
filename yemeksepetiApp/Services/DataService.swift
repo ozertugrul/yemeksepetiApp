@@ -38,6 +38,15 @@ class DataService: ObservableObject {
         }
     }
 
+    /// Oturumdaki storeOwner'ın kendi restoranını getirir (GET /restaurants/my).
+    /// managed_restaurant_id'ye ihtiyaç duymaz — doğrudan backend'den token ile çeker.
+    func fetchMyRestaurant(completion: @escaping (Restaurant?) -> Void) {
+        Task {
+            let r = try? await restaurantAPI.fetchMyRestaurant()
+            completion(r)
+        }
+    }
+
     func createRestaurant(restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
         Task {
             do {
