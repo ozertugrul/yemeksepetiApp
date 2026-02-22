@@ -13,7 +13,10 @@ struct AdminUserListView: View {
     @State private var isLoadingRestaurants = false
     @State private var alertTitle = ""
     @State private var showingAlert = false
-    @State private var showingCreateUser = false       // ← YENİ
+    @State private var showingCreateUser = false
+    @State private var showingQuickAssign = false      // ← Email ile yetki ata
+    @State private var showingDeleteAllConfirm = false // ← Tüm kullanıcıları sil
+    @State private var isDeletingAll = false
 
     private var filteredUsers: [AppUser] {
         let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
@@ -86,8 +89,25 @@ struct AdminUserListView: View {
         .navigationTitle(allUsers.isEmpty ? "Kullanıcı Yönetimi" : "Kullanıcılar (\(allUsers.count))")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingCreateUser = true } label: {
-                    Image(systemName: "person.badge.plus")
+                Menu {
+                    Button {
+                        showingQuickAssign = true
+                    } label: {
+                        Label("Email ile Yetki Ata", systemImage: "person.badge.shield.checkmark")
+                    }
+                    Button {
+                        showingCreateUser = true
+                    } label: {
+                        Label("Yeni Kullanıcı Oluştur", systemImage: "person.badge.plus")
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        showingDeleteAllConfirm = true
+                    } label: {
+                        Label("Tüm Kullanıcıları Sil", systemImage: "trash.fill")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
@@ -122,6 +142,23 @@ struct AdminUserListView: View {
             AdminCreateUserSheet(viewModel: viewModel) {
                 loadAllUsers()
             }
+        }
+        // ── Email ile hızlı yetki ata ─────────────────────────────────────────
+        .sheet(isPresented: $showingQuickAssign) {
+            AdminQuickRoleAssignSheet(allUsers: allUsers) { uid, role in
+                updateUserRole(uid: uid, role: role)
+            }
+        }
+        // ── Tüm kullanıcıları sil onayı ──────────────────────────────────────
+        .confirmationDialog(
+            "Tüm Kullanıcıları Sil",
+            isPresented: $showingDeleteAllConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Evet, Hepsini Sil", role: .destructive) { deleteAllUsers() }
+            Button("İptal", role: .cancel) {}
+        } message: {
+            Text("Bu işlem geri alınamaz. \(allUsers.count) kullanıcı silinecek.")
         }
         .alert(alertTitle, isPresented: $showingAlert) {
             Button("Tamam", role: .cancel) {}
@@ -184,6 +221,153 @@ struct AdminUserListView: View {
                 loadAllUsers()
             }
             showingAlert = true
+        }
+    }
+
+    func deleteAllUsers() {
+        isDeletingAll = true
+        let usersToDelete = allUsers
+        let group = DispatchGroup()
+        var errors: [String] = []
+        for user in usersToDelete {
+            group.enter()
+            viewModel.deleteUser(uid: user.id) { error in
+                if let error { errors.append(error.localizedDescription) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            isDeletingAll = false
+            if errors.isEmpty {
+                alertTitle = "\(usersToDelete.count) kullanıcı silindi."
+            } else {
+                alertTitle = "\(usersToDelete.count - errors.count) silindi, \(errors.count) hata."
+            }
+            showingAlert = true
+            loadAllUsers()
+        }
+    }
+}
+
+// MARK: - AdminQuickRoleAssignSheet
+
+struct AdminQuickRoleAssignSheet: View {
+    let allUsers: [AppUser]
+    let onAssign: (String, UserRole) -> Void
+
+    @State private var emailQuery = ""
+    @State private var selectedRole: UserRole = .user
+    @State private var selectedUser: AppUser?
+    @Environment(\.dismiss) private var dismiss
+
+    private var matchedUser: AppUser? {
+        let q = emailQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return nil }
+        return allUsers.first { $0.email.lowercased() == q }
+    }
+
+    private var suggestions: [AppUser] {
+        let q = emailQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard q.count >= 2 else { return [] }
+        return allUsers.filter { $0.email.lowercased().contains(q) }.prefix(5).map { $0 }
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Kullanıcı E-postası")) {
+                    TextField("ornek@mail.com", text: $emailQuery)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .disableAutocorrection(true)
+                        .onChange(of: emailQuery) { _ in selectedUser = nil }
+
+                    if !suggestions.isEmpty && selectedUser == nil {
+                        ForEach(suggestions) { user in
+                            Button {
+                                emailQuery = user.email
+                                selectedUser = user
+                            } label: {
+                                HStack {
+                                    Image(systemName: iconForRole(user.role))
+                                        .foregroundColor(.orange)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(user.email).foregroundColor(.primary)
+                                        Text(user.role.rawValue)
+                                            .font(.caption).foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let user = selectedUser ?? matchedUser {
+                    Section(header: Text("Seçilen Kullanıcı")) {
+                        HStack {
+                            Image(systemName: iconForRole(user.role))
+                                .foregroundColor(.orange)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(user.email).fontWeight(.semibold)
+                                Text("Mevcut rol: \(user.role.rawValue)")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Section(header: Text("Yeni Rol")) {
+                        Picker("Rol", selection: $selectedRole) {
+                            Text("Kullanıcı").tag(UserRole.user)
+                            Text("Mağaza Sahibi").tag(UserRole.storeOwner)
+                            Text("Süper Admin").tag(UserRole.superAdmin)
+                        }
+                        .pickerStyle(.segmented)
+
+                        Button {
+                            onAssign(user.id, selectedRole)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("Yetkiyi Uygula")
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .background(Color.orange)
+                            .cornerRadius(10)
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                } else if emailQuery.count >= 2 && matchedUser == nil && suggestions.isEmpty {
+                    Section {
+                        HStack {
+                            Image(systemName: "person.fill.questionmark")
+                                .foregroundColor(.secondary)
+                            Text("Bu e-posta ile kullanıcı bulunamadı")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Email ile Yetki Ata")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }
+                }
+            }
+            .onAppear { selectedRole = .user }
+        }
+    }
+
+    func iconForRole(_ role: UserRole) -> String {
+        switch role {
+        case .superAdmin: return "shield.fill"
+        case .storeOwner: return "briefcase.fill"
+        case .user:       return "person.fill"
         }
     }
 }
