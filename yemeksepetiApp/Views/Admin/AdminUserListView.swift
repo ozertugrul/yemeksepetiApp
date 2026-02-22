@@ -118,7 +118,7 @@ struct AdminUserListView: View {
         ) {
             if let user = activeUser {
                 Button("Süper Admin Yap") { updateUserRole(uid: user.id, role: .superAdmin) }
-                Button("Mağaza Sahibi Yap…") { fetchRestaurantsForPicker(for: user) }
+                Button("Mağaza Sahibi Yap") { updateUserRole(uid: user.id, role: .storeOwner) }
                 Button("Normal Kullanıcı Yap") { updateUserRole(uid: user.id, role: .user) }
                 Button("Kullanıcıyı Sil", role: .destructive) { deleteUser(uid: user.id) }
                 Button("İptal", role: .cancel) { activeUser = nil }

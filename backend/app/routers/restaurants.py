@@ -118,11 +118,28 @@ async def create_restaurant(
     db: AsyncSession = Depends(get_db),
     user: FirebaseUser = Depends(get_current_user),
 ):
+    # Sadece storeOwner veya admin mağaza açabilir
+    if user.role not in ("storeOwner", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mağaza açmak için 'storeOwner' veya 'admin' rolü gerekli.",
+        )
+
+    repo = SQLRestaurantRepository(db)
+
+    # storeOwner: zaten bir mağazası varsa ikincisini açamaz
+    if user.role == "storeOwner":
+        existing = await repo.get_by_owner(user.uid)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Zaten bir mağazanız mevcut. Her store owner yalnızca 1 mağaza açabilir.",
+            )
+
     data = body.model_dump(by_alias=False)
     data.setdefault("id", str(uuid.uuid4()))
     data["owner_id"] = data.get("owner_id") or user.uid
     data["allows_cash_on_del"] = data.pop("allows_cash_on_delivery", False)
-    repo = SQLRestaurantRepository(db)
     r = await repo.create(data)
     return _orm_to_schema(r)
 

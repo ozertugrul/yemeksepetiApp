@@ -52,8 +52,9 @@ class DataService: ObservableObject {
     func createRestaurantForOwner(restaurant: Restaurant, ownerUid: String, completion: @escaping (Error?) -> Void) {
         Task {
             do {
+                // Store owner creates their OWN restaurant — no admin call needed.
+                // Role is already set to storeOwner by the admin beforehand.
                 _ = try await restaurantAPI.createRestaurant(restaurant)
-                try await adminAPI.updateUserRole(uid: ownerUid, role: .storeOwner)
                 completion(nil)
             } catch {
                 completion(error)
