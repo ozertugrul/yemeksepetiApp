@@ -23,12 +23,17 @@ Carthage/Build/
 
 # Sensitive / secrets
 GoogleService-Info.plist
+**/GoogleService-Info.plist
 *.plist.bak
 Secrets.swift
+admin_reset.py
+**/admin_reset.py
 
 # Local environment
 .env
 .env.local
+*.env
+*.env.*
 
 # Backup files
 *.bak

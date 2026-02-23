@@ -14,6 +14,8 @@ venv/
 # Environment
 .env
 .env.local
+*.env
+*.env.*
 
 # Model cache (HuggingFace)
 .cache/
@@ -25,3 +27,7 @@ huggingface/
 # Secrets
 serviceAccountKey.json
 *-firebase-adminsdk-*.json
+GoogleService-Info.plist
+*.p12
+*.pem
+*.key
