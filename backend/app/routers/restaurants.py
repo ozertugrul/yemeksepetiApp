@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import FirebaseUser, get_current_user, get_optional_user, require_role
 from app.core.database import get_db
-from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository, SQLUserRepository
+from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository, SQLUserRepository  # noqa: F401 (SQLUserRepository co-owner için)
 from app.schemas.schemas import (
     MenuItemCreate, MenuItemOut,
     RestaurantCreate, RestaurantOut,
@@ -152,9 +152,19 @@ async def create_restaurant(
 
     data = body.model_dump(by_alias=False)
     data.setdefault("id", str(uuid.uuid4()))
-    data["owner_id"] = data.get("owner_id") or user.uid
+    actual_owner_id = data.get("owner_id") or user.uid
+    data["owner_id"] = actual_owner_id
     data["allows_cash_on_del"] = data.pop("allows_cash_on_delivery", False)
     r = await repo.create(data)
+
+    # managed_restaurant_id'yi sahip kullanıcıda da güncelle.
+    # Bu olmadan co-owner kontrolü primary owner'ı bulamaz → yanlış kapatma.
+    try:
+        user_repo = SQLUserRepository(db)
+        await user_repo.update(actual_owner_id, {"managed_restaurant_id": r.id})
+    except Exception:
+        pass  # Non-critical — restoranı döndür
+
     return _orm_to_schema(r)
 
 

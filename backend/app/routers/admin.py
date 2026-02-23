@@ -125,9 +125,19 @@ async def update_user_role(
 
     # storeOwner'dan farklı bir role düşürülüyorsa
     if user.role == "storeOwner" and role != "storeOwner":
+        rest_repo = SQLRestaurantRepository(db)
+
+        # Hangi restoranla bağlantılı? managed_restaurant_id önce, yoksa owner_id üzerinden
         managed_rest_id = user.managed_restaurant_id
+        if not managed_rest_id:
+            owned = await rest_repo.get_by_owner(uid)
+            if owned:
+                managed_rest_id = owned.id
+
         if managed_rest_id:
-            # Bu restorana bağlı başka sahip var mı? (co-owner kontrolü)
+            restaurant = await rest_repo.get_by_id(managed_rest_id)
+
+            # Başka sahip var mı? ─ managed_restaurant_id üzerinden bağlı diğer kullanıcılar
             co_owners_result = await db.execute(
                 sa_select(UserORM).where(
                     UserORM.managed_restaurant_id == managed_rest_id,
@@ -135,12 +145,19 @@ async def update_user_role(
                 )
             )
             co_owners = co_owners_result.scalars().all()
-            if not co_owners:
-                # Son sahip → restoranı pasife al ve sahipsizleştir
-                rest_repo = SQLRestaurantRepository(db)
-                restaurant = await rest_repo.get_by_id(managed_rest_id)
+
+            # Restoranın owner_id alanı başka birine mi ait? (primary owner ayrı kişi)
+            has_other_primary = (
+                restaurant is not None
+                and restaurant.owner_id is not None
+                and restaurant.owner_id != uid
+            )
+
+            if not co_owners and not has_other_primary:
+                # Gerçekten son sahip → restoranı pasife al ve sahipsizleştir
                 if restaurant:
                     await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
+
         # Kullanıcının managed_restaurant_id'sini temizle
         await user_repo.update(uid, {"managed_restaurant_id": None})
 
@@ -165,10 +182,19 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
     # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
-    # Restoranı sahipsizleştir + pasife al (siparişler kaybolmasın) — sadece son sahipse.
+    # Restoranı sahipsizleştir + pasife al — sadece gerçekten son sahipse.
     rest_repo = SQLRestaurantRepository(db)
+
+    # Hangi restoranla bağlantılı?
     managed_rest_id = user.managed_restaurant_id
+    if not managed_rest_id:
+        owned = await rest_repo.get_by_owner(uid)
+        if owned:
+            managed_rest_id = owned.id
+
     if managed_rest_id:
+        restaurant = await rest_repo.get_by_id(managed_rest_id)
+
         co_owners_result = await db.execute(
             sa_select(UserORM).where(
                 UserORM.managed_restaurant_id == managed_rest_id,
@@ -176,8 +202,14 @@ async def delete_user(
             )
         )
         co_owners = co_owners_result.scalars().all()
-        if not co_owners:
-            restaurant = await rest_repo.get_by_id(managed_rest_id)
+
+        has_other_primary = (
+            restaurant is not None
+            and restaurant.owner_id is not None
+            and restaurant.owner_id != uid
+        )
+
+        if not co_owners and not has_other_primary:
             if restaurant:
                 await rest_repo.update(restaurant.id, {"is_active": False, "owner_id": None})
 

@@ -10,9 +10,12 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
+    pool_recycle=300,          # Supabase idle timeout önlemi
     echo=settings.debug,
-    # Transaction pooler (pgbouncer) PREPARE desteklemez
-    connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
+    # Supabase/PgBouncer transaction-mode: prepared statement cache KAPALI
+    # 'statement_cache_size' asyncpg'nin doğal parametresi (0 = cache yok)
+    # 'prepared_statement_cache_size' ise asyncpg bilmez → KALDIRILDI
+    connect_args={"statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
