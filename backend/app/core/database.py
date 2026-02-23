@@ -1,10 +1,28 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
+from uuid import uuid4
 
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+def _with_pg_bouncer_params(raw_url: str) -> str:
+    """
+    SQLAlchemy asyncpg dialect için PgBouncer-safe query param'ları ekle.
+
+    - prepared_statement_cache_size=0: SQLAlchemy asyncpg prepared statement cache'i kapat
+    - statement_cache_size=0: asyncpg statement cache'i kapat
+    """
+    separator = "&" if "?" in raw_url else "?"
+    url = raw_url
+    if "prepared_statement_cache_size=" not in url:
+        url = f"{url}{separator}prepared_statement_cache_size=0"
+        separator = "&"
+    if "statement_cache_size=" not in url:
+        url = f"{url}{separator}statement_cache_size=0"
+    return url
 
 # NullPool: PgBouncer transaction-mode kesin çözüm.
 #
@@ -23,8 +41,12 @@ settings = get_settings()
 # - PgBouncer transaction-mod zaten kısa ömürlü bağlantı için tasarlanmıştır.
 # - Koyeb / Supabase ortamında performance maliyeti ihmal edilebilir.
 engine = create_async_engine(
-    settings.database_url,
+    _with_pg_bouncer_params(settings.database_url),
     poolclass=NullPool,
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
+    },
     echo=settings.debug,
 )
 
