@@ -13,7 +13,7 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -74,12 +74,15 @@ async def get_current_user(
     uid = decoded["uid"]
     email = decoded.get("email")
 
-    # Rolü her zaman PostgreSQL'den oku (custom claims'e güvenme)
+    # Rolü her zaman PostgreSQL'den oku — ORM select() kullan:
+    # text()+named-param yaklaşımı asyncpg'de prepared statement üretiyor,
+    # PgBouncer transaction-mode ile çakışıyor → ORM select saha testiyle daha güvenli.
+    from app.models.orm_models import UserORM
     result = await db.execute(
-        text("SELECT role FROM users WHERE id = :uid"), {"uid": uid}
+        select(UserORM.role).where(UserORM.id == uid)
     )
-    row = result.fetchone()
-    role = row[0] if row else "user"
+    row = result.scalar_one_or_none()
+    role = row if row else "user"
 
     return FirebaseUser(uid=uid, email=email, role=role)
 
