@@ -18,7 +18,7 @@ from app.core.auth import FirebaseUser, _init_firebase_app, require_role
 from app.core.database import get_db
 from app.models.orm_models import OrderORM, RestaurantORM, UserORM
 from app.repositories.sql_repos import SQLRestaurantRepository, SQLUserRepository
-from app.schemas.schemas import RestaurantOut, UserOut
+from app.schemas.schemas import CamelModel, RestaurantOut, UserOut
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -229,8 +229,9 @@ async def toggle_restaurant_active(
 
 # ── Ortak Sahip Ata ───────────────────────────────────────────────────────────
 
-class ManagedRestaurantBody(BaseModel):
+class ManagedRestaurantBody(CamelModel):
     restaurant_id: Optional[str] = None   # None → ilişkiyi kes
+    # CamelModel sayesinde iOS'tan gelen 'restaurantId' → restaurant_id olarak parse edilir
 
 
 @router.patch("/users/{uid}/managed-restaurant", response_model=UserOut)

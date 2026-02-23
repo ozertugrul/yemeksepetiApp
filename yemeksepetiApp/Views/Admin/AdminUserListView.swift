@@ -127,7 +127,11 @@ struct AdminUserListView: View {
                 Button("Süper Admin Yap") { updateUserRole(uid: user.id, role: .superAdmin) }
                 Button("Mağaza Sahibi Yap") { updateUserRole(uid: user.id, role: .storeOwner) }
                 Button("Ortak Sahip Yap") {
-                    showingCoOwnerPicker = true
+                    // confirmationDialog kapandıktan sonra sheet açılmalı,
+                    // aksi hâlde SwiftUI animation çakışması olur
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showingCoOwnerPicker = true
+                    }
                 }
                 Button("Normal Kullanıcı Yap") { updateUserRole(uid: user.id, role: .user) }
                 Button("Kullanıcıyı Sil", role: .destructive) { deleteUser(uid: user.id) }
