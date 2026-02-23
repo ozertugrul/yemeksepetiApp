@@ -176,12 +176,22 @@ async def update_restaurant(
     user: FirebaseUser = Depends(get_current_user),
 ):
     repo = SQLRestaurantRepository(db)
+    user_repo = SQLUserRepository(db)
     existing = await repo.get_by_id(restaurant_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
-    # Sahiplik kontrolü (admin her şeyi değiştirebilir)
-    if user.role != "admin" and existing.owner_id != user.uid:
+
+    # Rol + sahiplik kontrolü
+    if user.role not in ("storeOwner", "admin"):
         raise HTTPException(status_code=403, detail="Bu restoranı değiştirme yetkiniz yok.")
+
+    if user.role != "admin":
+        db_user = await user_repo.get_by_id(user.uid)
+        is_primary_owner = existing.owner_id == user.uid
+        is_co_owner = bool(db_user and db_user.managed_restaurant_id == restaurant_id)
+        if not is_primary_owner and not is_co_owner:
+            raise HTTPException(status_code=403, detail="Bu restoranı değiştirme yetkiniz yok.")
+
     data = body.model_dump(by_alias=False, exclude_unset=True)
     data.pop("id", None)
     if "allows_cash_on_delivery" in data:
@@ -199,6 +209,23 @@ async def add_menu_item(
     db: AsyncSession = Depends(get_db),
     user: FirebaseUser = Depends(get_current_user),
 ):
+    rest_repo = SQLRestaurantRepository(db)
+    user_repo = SQLUserRepository(db)
+
+    restaurant = await rest_repo.get_by_id(restaurant_id)
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
+
+    if user.role not in ("storeOwner", "admin"):
+        raise HTTPException(status_code=403, detail="Bu restorana menü ekleme yetkiniz yok.")
+
+    if user.role != "admin":
+        db_user = await user_repo.get_by_id(user.uid)
+        is_primary_owner = restaurant.owner_id == user.uid
+        is_co_owner = bool(db_user and db_user.managed_restaurant_id == restaurant_id)
+        if not is_primary_owner and not is_co_owner:
+            raise HTTPException(status_code=403, detail="Bu restorana menü ekleme yetkiniz yok.")
+
     data = body.model_dump(by_alias=False)
     data["restaurant_id"] = restaurant_id
     data.setdefault("id", str(uuid.uuid4()))

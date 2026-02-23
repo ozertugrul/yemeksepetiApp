@@ -1,6 +1,11 @@
 import Foundation
 import FirebaseAuth
 
+extension Notification.Name {
+    static let apiUnauthorized = Notification.Name("apiUnauthorized")
+    static let apiForbidden = Notification.Name("apiForbidden")
+}
+
 // MARK: - APIConfig
 
 enum APIConfig {
@@ -16,6 +21,7 @@ enum APIConfig {
 enum APIError: Error, LocalizedError {
     case invalidURL
     case unauthorized
+    case forbidden
     case notFound
     case serverError(Int, String)
     case decodingFailed(Error)
@@ -25,6 +31,7 @@ enum APIError: Error, LocalizedError {
         switch self {
         case .invalidURL:          return "Geçersiz URL"
         case .unauthorized:        return "Oturum süreniz dolmuş, lütfen tekrar giriş yapın."
+        case .forbidden:           return "Bu işlem için yetkiniz yok."
         case .notFound:            return "İçerik bulunamadı."
         case .serverError(let c, let m): return "Sunucu hatası (\(c)): \(m)"
         case .decodingFailed(let e):     return "Veri çözümleme hatası: \(e)"
@@ -107,7 +114,12 @@ actor APIClient {
             } catch {
                 throw APIError.decodingFailed(error)
             }
-        case 401: throw APIError.unauthorized
+        case 401:
+            NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            throw APIError.unauthorized
+        case 403:
+            NotificationCenter.default.post(name: .apiForbidden, object: nil)
+            throw APIError.forbidden
         case 404: throw APIError.notFound
         default:
             let msg = String(data: data, encoding: .utf8) ?? ""
@@ -119,8 +131,17 @@ actor APIClient {
         let req = try await request(method: method, path: path, body: body)
         let (_, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode == 401 { throw APIError.unauthorized }
-        if http.statusCode >= 400 { throw APIError.serverError(http.statusCode, "") }
+        if http.statusCode == 401 {
+            NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            throw APIError.unauthorized
+        }
+        if http.statusCode == 403 {
+            NotificationCenter.default.post(name: .apiForbidden, object: nil)
+            throw APIError.forbidden
+        }
+        if http.statusCode >= 400 {
+            throw APIError.serverError(http.statusCode, "")
+        }
     }
 
     // ── Convenience ───────────────────────────────────────────────────────────

@@ -181,6 +181,17 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
+    # Önce Firebase hesabını sil: aksi halde PostgreSQL'den silinip Firebase'de kalan
+    # kullanıcı /users/me ile tekrar oluşturulabilir.
+    _init_firebase_app()
+    try:
+        from firebase_admin import auth as firebase_auth
+        firebase_auth.delete_user(uid)
+    except firebase_auth.UserNotFoundError:
+        pass
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Firebase kullanıcı silinemedi: {e}")
+
     # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
     # Restoranı sahipsizleştir + pasife al — sadece gerçekten son sahipse.
     rest_repo = SQLRestaurantRepository(db)
@@ -224,13 +235,7 @@ async def delete_user(
     if not deleted:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
-    # Firebase'den de sil (yoksa kişi tekrar login olabilir)
-    _init_firebase_app()
-    try:
-        from firebase_admin import auth as firebase_auth
-        firebase_auth.delete_user(uid)
-    except Exception:
-        pass  # Firebase'de yoksa sessizce geç
+    return None
 
 
 # ── Restoran Yönetimi ─────────────────────────────────────────────────────────

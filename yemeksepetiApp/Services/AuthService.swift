@@ -10,6 +10,8 @@ class AuthService: ObservableObject {
     @Published var errorMessage: String?
 
     private let userAPI = UserAPIService()
+    private var apiUnauthorizedObserver: NSObjectProtocol?
+    private var apiForbiddenObserver: NSObjectProtocol?
     /// register() sırasında addStateDidChangeListener'dan gelen örtüşen
     /// fetchUserProfileFromAPI çağrısını engeller.
     private var suppressNextListenerFetch = false
@@ -26,6 +28,31 @@ class AuthService: ObservableObject {
             } else {
                 DispatchQueue.main.async { self.user = nil }
             }
+        }
+
+        apiUnauthorizedObserver = NotificationCenter.default.addObserver(
+            forName: .apiUnauthorized,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.signOut()
+        }
+
+        apiForbiddenObserver = NotificationCenter.default.addObserver(
+            forName: .apiForbidden,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshCurrentUser()
+        }
+    }
+
+    deinit {
+        if let observer = apiUnauthorizedObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = apiForbiddenObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 

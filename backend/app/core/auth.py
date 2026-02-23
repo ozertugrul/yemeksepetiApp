@@ -5,7 +5,6 @@ iOS tarafı her istekte Authorization: Bearer <idToken> header'ı gönderir.
 fastapi-firebase-auth yerine firebase-admin kullanıyoruz (daha güvenilir).
 """
 import json
-import os
 from functools import lru_cache
 from typing import Optional
 
@@ -47,13 +46,12 @@ class FirebaseUser:
         self.role = role or "user"
 
 
-async def get_current_user(
+async def get_firebase_identity(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: AsyncSession = Depends(get_db),
 ) -> FirebaseUser:
     """
-    Bearer token'ı Firebase ile doğrula, ardından rolü PostgreSQL'den oku.
-    Geçersiz/eksik token → 401.
+    Bearer token'ı Firebase ile doğrula ve hesabın gerçekten var olduğunu doğrula.
+    DB rol kontrolü yapmaz; bootstrap endpoint'lerde kullanılabilir.
     """
     _init_firebase_app()
 
@@ -64,7 +62,7 @@ async def get_current_user(
         )
 
     try:
-        decoded = firebase_auth.verify_id_token(credentials.credentials)
+        decoded = firebase_auth.verify_id_token(credentials.credentials, check_revoked=True)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -74,6 +72,35 @@ async def get_current_user(
     uid = decoded["uid"]
     email = decoded.get("email")
 
+    try:
+        fb_user = firebase_auth.get_user(uid)
+        if getattr(fb_user, "disabled", False):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Kullanıcı hesabı devre dışı.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kullanıcı hesabı bulunamadı veya geçersiz.",
+        )
+
+    return FirebaseUser(uid=uid, email=email)
+
+
+async def get_current_user(
+    identity: FirebaseUser = Depends(get_firebase_identity),
+    db: AsyncSession = Depends(get_db),
+) -> FirebaseUser:
+    """
+    Bearer token'ı Firebase ile doğrula, ardından rolü PostgreSQL'den oku.
+    Geçersiz/eksik token → 401.
+    """
+    uid = identity.uid
+    email = identity.email
+
     # Rolü her zaman PostgreSQL'den oku — ORM select() kullan:
     # text()+named-param yaklaşımı asyncpg'de prepared statement üretiyor,
     # PgBouncer transaction-mode ile çakışıyor → ORM select saha testiyle daha güvenli.
@@ -82,7 +109,12 @@ async def get_current_user(
         select(UserORM.role).where(UserORM.id == uid)
     )
     row = result.scalar_one_or_none()
-    role = row if row else "user"
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kullanıcı hesabı bulunamadı.",
+        )
+    role = row
 
     return FirebaseUser(uid=uid, email=email, role=role)
 

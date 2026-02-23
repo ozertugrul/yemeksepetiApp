@@ -8,7 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import FirebaseUser, get_current_user
+from app.core.auth import FirebaseUser, get_current_user, get_firebase_identity
 from app.core.database import get_db
 from app.repositories.sql_repos import SQLAddressRepository, SQLUserRepository
 from app.schemas.schemas import UserAddressCreate, UserAddressOut, UserOut
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @router.get("/me", response_model=UserOut)
 async def get_me(
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: FirebaseUser = Depends(get_firebase_identity),
 ):
     repo = SQLUserRepository(db)
     u = await repo.get_by_id(user.uid)
