@@ -7,7 +7,7 @@ import uuid
 from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import select, update, delete
+from sqlalchemy import func, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -210,6 +210,19 @@ class SQLUserRepository(UserRepositoryBase):
     async def get_all(self) -> List[UserORM]:
         result = await self.db.execute(select(UserORM).order_by(UserORM.email))
         return result.scalars().all()
+
+    async def get_page(self, offset: int, limit: int) -> List[UserORM]:
+        result = await self.db.execute(
+            select(UserORM)
+            .order_by(UserORM.email)
+            .offset(offset)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def count_all(self) -> int:
+        result = await self.db.execute(select(func.count()).select_from(UserORM))
+        return int(result.scalar_one() or 0)
 
     async def delete_by_id(self, user_id: str) -> bool:
         result = await self.db.execute(

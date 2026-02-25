@@ -9,6 +9,8 @@ class AppViewModel: ObservableObject {
     let orderService   = OrderService()
     let couponService  = CouponService()
     @Published var selectedTab: Int = 0
+    /// Shared selected address ID — keeps checkout ↔ home in sync
+    @Published var selectedAddressId: String?
 
     // ── API Services ──────────────────────────────────────────────────────────
     let userAPI           = UserAPIService()
@@ -20,20 +22,14 @@ class AppViewModel: ObservableObject {
     private var lastUserId: String?
 
     init() {
-        // Propagate child-service changes up to AppViewModel so SwiftUI re-renders
+        // Only propagate auth changes (login/logout/role) so the root view can switch tabs.
+        // DataService / OrderService changes should NOT trigger full-app re-render;
+        // they are read locally via callbacks / completion handlers.
         authService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         cart.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-
-        dataService.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-
-        orderService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
@@ -64,6 +60,29 @@ class AppViewModel: ObservableObject {
                 completion([], error.localizedDescription)
             }
         }
+    }
+
+    func fetchUsersPage(offset: Int, limit: Int = 50, completion: @escaping (AdminUsersPage?, String?) -> Void) {
+        Task {
+            do {
+                let page = try await adminAPI.fetchUsersPage(offset: offset, limit: limit)
+                completion(page, nil)
+            } catch {
+                completion(nil, error.localizedDescription)
+            }
+        }
+    }
+
+    func loadCachedAdminUsers(maxAge: TimeInterval = 300) -> [AppUser] {
+        adminAPI.loadCachedUsers(maxAge: maxAge)
+    }
+
+    func saveAdminUsersCache(_ users: [AppUser]) {
+        adminAPI.saveUsersToCache(users)
+    }
+
+    func clearAdminUsersCache() {
+        adminAPI.clearUsersCache()
     }
 
     func updateUserRole(uid: String, role: UserRole, completion: @escaping (Error?) -> Void) {

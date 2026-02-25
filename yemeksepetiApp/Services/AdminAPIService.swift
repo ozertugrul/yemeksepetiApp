@@ -26,6 +26,29 @@ struct APIAdminUser: Decodable, Identifiable {
     }
 }
 
+struct APIAdminUsersPage: Decodable {
+    let users: [APIAdminUser]
+    let total: Int
+    let offset: Int
+    let limit: Int
+    let nextOffset: Int?
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case users, total, offset, limit, hasMore
+        case nextOffset = "next_offset"
+    }
+}
+
+struct AdminUsersPage {
+    let users: [AppUser]
+    let total: Int
+    let offset: Int
+    let limit: Int
+    let nextOffset: Int?
+    let hasMore: Bool
+}
+
 // MARK: - AdminStats
 
 struct AdminStats: Decodable {
@@ -42,11 +65,62 @@ struct AdminStats: Decodable {
 struct AdminAPIService {
     private let client = APIClient.shared
 
+    private enum CacheKeys {
+        static let adminUsers = "admin.users.cache.v1"
+        static let adminUsersUpdatedAt = "admin.users.cache.updatedAt.v1"
+    }
+
     // ── Kullanıcı Yönetimi ────────────────────────────────────────────────────
 
     func fetchAllUsers() async throws -> [AppUser] {
         let api = try await client.get([APIAdminUser].self, path: "/admin/users")
-        return api.map { $0.toAppUser() }
+        let users = api.map { $0.toAppUser() }
+        saveUsersToCache(users)
+        return users
+    }
+
+    func fetchUsersPage(offset: Int, limit: Int = 50) async throws -> AdminUsersPage {
+        let api = try await client.get(
+            APIAdminUsersPage.self,
+            path: "/admin/users/paged",
+            queryItems: [
+                URLQueryItem(name: "offset", value: String(offset)),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ]
+        )
+        let users = api.users.map { $0.toAppUser() }
+        return AdminUsersPage(
+            users: users,
+            total: api.total,
+            offset: api.offset,
+            limit: api.limit,
+            nextOffset: api.nextOffset,
+            hasMore: api.hasMore
+        )
+    }
+
+    func loadCachedUsers(maxAge: TimeInterval = 300) -> [AppUser] {
+        guard let lastUpdated = UserDefaults.standard.object(forKey: CacheKeys.adminUsersUpdatedAt) as? Date else {
+            return []
+        }
+        guard Date().timeIntervalSince(lastUpdated) <= maxAge else {
+            return []
+        }
+        guard let data = UserDefaults.standard.data(forKey: CacheKeys.adminUsers) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([AppUser].self, from: data)) ?? []
+    }
+
+    func saveUsersToCache(_ users: [AppUser]) {
+        guard let data = try? JSONEncoder().encode(users) else { return }
+        UserDefaults.standard.set(data, forKey: CacheKeys.adminUsers)
+        UserDefaults.standard.set(Date(), forKey: CacheKeys.adminUsersUpdatedAt)
+    }
+
+    func clearUsersCache() {
+        UserDefaults.standard.removeObject(forKey: CacheKeys.adminUsers)
+        UserDefaults.standard.removeObject(forKey: CacheKeys.adminUsersUpdatedAt)
     }
 
     func createUser(email: String, password: String,

@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func as sql_func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +55,38 @@ async def list_all_users(
     repo = SQLUserRepository(db)
     users = await repo.get_all()
     return [_user_schema(u) for u in users]
+
+
+class AdminUsersPage(CamelModel):
+    users: List[UserOut]
+    total: int
+    offset: int
+    limit: int
+    next_offset: Optional[int] = None
+    has_more: bool
+
+
+@router.get("/users/paged", response_model=AdminUsersPage)
+async def list_users_paged(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _user: FirebaseUser = Depends(require_role("admin")),
+):
+    repo = SQLUserRepository(db)
+    total = await repo.count_all()
+    rows = await repo.get_page(offset=offset, limit=limit)
+    users = [_user_schema(u) for u in rows]
+    next_offset = offset + len(users)
+    has_more = next_offset < total
+    return AdminUsersPage(
+        users=users,
+        total=total,
+        offset=offset,
+        limit=limit,
+        next_offset=next_offset if has_more else None,
+        has_more=has_more,
+    )
 
 
 # ── Kullanıcı Oluştur ─────────────────────────────────────────────────────────
