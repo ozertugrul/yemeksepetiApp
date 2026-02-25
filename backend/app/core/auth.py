@@ -13,6 +13,7 @@ from firebase_admin import auth as firebase_auth, credentials
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -105,9 +106,15 @@ async def get_current_user(
     # text()+named-param yaklaşımı asyncpg'de prepared statement üretiyor,
     # PgBouncer transaction-mode ile çakışıyor → ORM select saha testiyle daha güvenli.
     from app.models.orm_models import UserORM
-    result = await db.execute(
-        select(UserORM.role).where(UserORM.id == uid)
-    )
+    try:
+        result = await db.execute(
+            select(UserORM.role).where(UserORM.id == uid)
+        )
+    except (TimeoutError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı geçici olarak kullanılamıyor. Lütfen tekrar deneyin.",
+        )
     row = result.scalar_one_or_none()
     if row is None:
         raise HTTPException(

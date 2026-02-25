@@ -44,6 +44,8 @@ engine = create_async_engine(
     _with_pg_bouncer_params(settings.database_url),
     poolclass=NullPool,
     connect_args={
+        "timeout": 15,
+        "command_timeout": 30,
         "statement_cache_size": 0,
         "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
     },

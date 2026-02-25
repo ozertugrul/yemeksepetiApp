@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.core.database import engine
@@ -36,6 +38,22 @@ app = FastAPI(
     description="iOS yemek sipariş uygulaması backend — PostgreSQL + pgvector",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(TimeoutError)
+async def timeout_exception_handler(_request: Request, _exc: TimeoutError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Servis geçici olarak meşgul. Lütfen tekrar deneyin."},
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(_request: Request, _exc: SQLAlchemyError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Veritabanı geçici olarak kullanılamıyor. Lütfen tekrar deneyin."},
+    )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
