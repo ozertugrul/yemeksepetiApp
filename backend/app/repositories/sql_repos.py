@@ -47,20 +47,18 @@ class SQLRestaurantRepository(RestaurantRepositoryBase):
         result = await self.db.execute(select(RestaurantORM))
         return result.scalars().all()
 
-    async def get_by_id(self, restaurant_id: str) -> Optional[RestaurantORM]:
-        result = await self.db.execute(
-            select(RestaurantORM)
-            .options(selectinload(RestaurantORM.menu_items))
-            .where(RestaurantORM.id == restaurant_id)
-        )
+    async def get_by_id(self, restaurant_id: str, include_menu: bool = False) -> Optional[RestaurantORM]:
+        query = select(RestaurantORM).where(RestaurantORM.id == restaurant_id)
+        if include_menu:
+            query = query.options(selectinload(RestaurantORM.menu_items))
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_by_owner(self, owner_id: str) -> Optional[RestaurantORM]:
-        result = await self.db.execute(
-            select(RestaurantORM)
-            .options(selectinload(RestaurantORM.menu_items))
-            .where(RestaurantORM.owner_id == owner_id)
-        )
+    async def get_by_owner(self, owner_id: str, include_menu: bool = False) -> Optional[RestaurantORM]:
+        query = select(RestaurantORM).where(RestaurantORM.owner_id == owner_id)
+        if include_menu:
+            query = query.options(selectinload(RestaurantORM.menu_items))
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def create(self, data: dict) -> RestaurantORM:
@@ -71,13 +69,13 @@ class SQLRestaurantRepository(RestaurantRepositoryBase):
         await self.db.flush()
         return obj
 
-    async def update(self, restaurant_id: str, data: dict) -> Optional[RestaurantORM]:
+    async def update(self, restaurant_id: str, data: dict, include_menu: bool = False) -> Optional[RestaurantORM]:
         await self.db.execute(
             update(RestaurantORM)
             .where(RestaurantORM.id == restaurant_id)
             .values(**data)
         )
-        return await self.get_by_id(restaurant_id)
+        return await self.get_by_id(restaurant_id, include_menu=include_menu)
 
     async def delete(self, restaurant_id: str) -> bool:
         result = await self.db.execute(

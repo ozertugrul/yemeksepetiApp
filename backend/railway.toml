@@ -10,4 +10,7 @@ restartPolicyMaxRetries = 3
 
 [environments.production.variables]
 USE_SQL_BACKEND = "true"
-USE_EMBEDDINGS = "true"
+USE_EMBEDDINGS = "false"
+UVICORN_WORKERS = "1"
+EMBEDDING_BATCH_SIZE = "16"
+EMBEDDING_MAX_SEQ_LENGTH = "128"

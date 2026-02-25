@@ -100,12 +100,12 @@ async def get_my_restaurant(
 
     db_user = await user_repo.get_by_id(user.uid)
     if db_user and db_user.managed_restaurant_id:
-        r = await repo.get_by_id(db_user.managed_restaurant_id)
+        r = await repo.get_by_id(db_user.managed_restaurant_id, include_menu=True)
         if r:
             return _orm_to_schema(r, include_menu=True)
 
     # Fallback: primary owner_id ile ara
-    r = await repo.get_by_owner(user.uid)
+    r = await repo.get_by_owner(user.uid, include_menu=True)
     if not r:
         raise HTTPException(status_code=404, detail="Restoranınız bulunamadı.")
     return _orm_to_schema(r, include_menu=True)
@@ -118,7 +118,7 @@ async def get_restaurant(
     _user: Optional[FirebaseUser] = Depends(get_optional_user),
 ):
     repo = SQLRestaurantRepository(db)
-    r = await repo.get_by_id(restaurant_id)
+    r = await repo.get_by_id(restaurant_id, include_menu=True)
     if not r:
         raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
     return _orm_to_schema(r, include_menu=True)
@@ -196,7 +196,7 @@ async def update_restaurant(
     data.pop("id", None)
     if "allows_cash_on_delivery" in data:
         data["allows_cash_on_del"] = data.pop("allows_cash_on_delivery")
-    r = await repo.update(restaurant_id, data)
+    r = await repo.update(restaurant_id, data, include_menu=True)
     return _orm_to_schema(r, include_menu=True)
 
 

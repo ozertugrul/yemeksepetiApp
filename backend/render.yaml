@@ -14,7 +14,9 @@ services:
       - key: USE_SQL_BACKEND
         value: "true"
       - key: USE_EMBEDDINGS
-        value: "true"
+        value: "false"
+      - key: UVICORN_WORKERS
+        value: "1"
       - key: DEBUG
         value: "false"
       - key: API_PREFIX
@@ -23,4 +25,8 @@ services:
         value: sentence-transformers/all-MiniLM-L6-v2
       - key: EMBEDDING_DIM
         value: "384"
+      - key: EMBEDDING_BATCH_SIZE
+        value: "16"
+      - key: EMBEDDING_MAX_SEQ_LENGTH
+        value: "128"
     healthCheckPath: /health

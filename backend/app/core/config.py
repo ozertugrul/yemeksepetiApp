@@ -17,11 +17,13 @@ class Settings(BaseSettings):
     # 0 = Firestore-only (rollback), 1 = SQL read/write aktif
     use_sql_backend: bool = True
     # 0 = embedding üretme, 1 = embed + pgvector öneri aktif
-    use_embeddings: bool = True
+    use_embeddings: bool = False
 
     # ── Embedding ─────────────────────────────────────────────────
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dim: int = 384
+    embedding_batch_size: int = 16
+    embedding_max_seq_length: int = 128
 
     # ── API ───────────────────────────────────────────────────────
     api_prefix: str = "/api/v1"

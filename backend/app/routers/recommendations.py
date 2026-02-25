@@ -87,7 +87,6 @@ async def batch_embed_restaurant(
     Bir restoranın tüm menü öğeleri için embedding üret (migration / sync).
     Büyük menülerde arka planda çalıştırmak için Celery/BackgroundTasks ile entegre edilebilir.
     """
-    from fastapi import BackgroundTasks
     repo = SQLMenuItemRepository(db)
     items = await repo.get_by_restaurant(restaurant_id)
     if not items:

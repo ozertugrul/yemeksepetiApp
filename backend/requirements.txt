@@ -1,17 +1,2 @@
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-asyncpg==0.30.0
-SQLAlchemy[asyncio]==2.0.36
-pgvector==0.3.6
-alembic==1.14.0
-pydantic==2.10.3
-pydantic-settings==2.7.0
-python-dotenv==1.0.1
-firebase-admin==6.6.0
-httpx==0.28.1
-sentence-transformers==3.3.1
-# torch CPU-only (~200MB, GPU versiyonu ~2.5GB — free hosting için)
-torch==2.5.1+cpu
-numpy==1.26.4
-python-multipart==0.0.20
-tenacity==9.0.0
+-r requirements.core.txt
+-r requirements.embeddings.txt

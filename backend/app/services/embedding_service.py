@@ -8,21 +8,24 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import List, Optional
-
-import numpy as np
-from sentence_transformers import SentenceTransformer
+from typing import TYPE_CHECKING, List, Optional
 
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 
 @lru_cache(maxsize=1)
-def _load_model(model_name: str) -> SentenceTransformer:
+def _load_model(model_name: str, max_seq_length: int):
     """Model'i bir kez yükle, singleton olarak tut."""
+    from sentence_transformers import SentenceTransformer
+
     logger.info(f"Embedding modeli yükleniyor: {model_name}")
-    model = SentenceTransformer(model_name)
+    model = SentenceTransformer(model_name, device="cpu")
+    model.max_seq_length = max_seq_length
     logger.info("Model yüklendi.")
     return model
 
@@ -36,12 +39,14 @@ class EmbeddingService:
         settings = get_settings()
         self._model_name = settings.embedding_model
         self._enabled = settings.use_embeddings
+        self._batch_size = settings.embedding_batch_size
+        self._max_seq_length = settings.embedding_max_seq_length
 
     @property
-    def model(self) -> Optional[SentenceTransformer]:
+    def model(self) -> Optional["SentenceTransformer"]:
         if not self._enabled:
             return None
-        return _load_model(self._model_name)
+        return _load_model(self._model_name, self._max_seq_length)
 
     # ── Embedding üretimi ─────────────────────────────────────────────────────
 
@@ -49,14 +54,26 @@ class EmbeddingService:
         """Tek metin → 384-boyutlu float listesi."""
         if not self._enabled or not text.strip():
             return None
-        vec = self.model.encode(text, normalize_embeddings=True)
+        vec = self.model.encode(
+            [text],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            batch_size=1,
+        )[0]
         return vec.tolist()
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Toplu metin → embedding listesi (migration için)."""
         if not self._enabled:
             return [[] for _ in texts]
-        vecs = self.model.encode(texts, normalize_embeddings=True, batch_size=64)
+        if not texts:
+            return []
+        vecs = self.model.encode(
+            texts,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            batch_size=self._batch_size,
+        )
         return [v.tolist() for v in vecs]
 
     # ── Menü öğesi metin şablonu ──────────────────────────────────────────────
@@ -86,6 +103,10 @@ class EmbeddingService:
 
     @staticmethod
     def cosine_similarity(a: List[float], b: List[float]) -> float:
-        va, vb = np.array(a), np.array(b)
-        denom = np.linalg.norm(va) * np.linalg.norm(vb)
-        return float(np.dot(va, vb) / denom) if denom > 0 else 0.0
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(y * y for y in b) ** 0.5
+        denom = norm_a * norm_b
+        return float(dot / denom) if denom > 0 else 0.0

@@ -31,3 +31,9 @@ GoogleService-Info.plist
 *.p12
 *.pem
 *.key
+
+# Local one-off scripts (may contain sensitive data)
+scripts/_*.py
+scripts/backfill_addresses_and_coupons.py
+scripts/fill_missing_cities.py
+scripts/generate_synthetic_data.py
