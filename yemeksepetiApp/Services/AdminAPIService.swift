@@ -31,13 +31,9 @@ struct APIAdminUsersPage: Decodable {
     let total: Int
     let offset: Int
     let limit: Int
-    let nextOffset: Int?
-    let hasMore: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case users, total, offset, limit, hasMore
-        case nextOffset = "next_offset"
-    }
+    let nextOffset: Int?   // backend CamelModel → "nextOffset"
+    let hasMore: Bool      // backend CamelModel → "hasMore"
+    // No CodingKeys needed: field names already match backend camelCase output
 }
 
 struct AdminUsersPage {
@@ -67,14 +63,9 @@ private struct APIAdminRestaurantsPage: Decodable {
     let total: Int
     let offset: Int
     let limit: Int
-    let nextOffset: Int?
-    let hasMore: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case restaurants, total, offset, limit
-        case nextOffset = "next_offset"
-        case hasMore    = "has_more"
-    }
+    let nextOffset: Int?   // backend CamelModel → "nextOffset"
+    let hasMore: Bool      // backend CamelModel → "hasMore" (was wrongly mapped to "has_more")
+    // No CodingKeys: field names already match backend camelCase output
 }
 
 struct AdminRestaurantsPage {
@@ -271,8 +262,18 @@ struct AdminAPIService {
         )
     }
 
+    /// Tüm DB'deki benzersiz restoran şehirleri — filtre picker için.
+    func fetchDistinctRestaurantCities() async throws -> [String] {
+        return try await client.get([String].self, path: "/admin/restaurants/distinct-cities")
+    }
+
+    /// Tüm DB'deki benzersiz mutfak türleri — filtre picker için.
+    func fetchDistinctRestaurantCuisines() async throws -> [String] {
+        return try await client.get([String].self, path: "/admin/restaurants/distinct-cuisines")
+    }
+
     func deleteRestaurant(id: String) async throws {
-        try await client.delete(path: "/restaurants/\(id)")
+        try await client.delete(path: "/admin/restaurants/\(id)")
     }
 
     func toggleRestaurantActive(id: String) async throws -> Restaurant {

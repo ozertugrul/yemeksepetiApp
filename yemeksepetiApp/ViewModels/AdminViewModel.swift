@@ -38,6 +38,11 @@ final class AdminViewModel: ObservableObject {
     @Published private(set) var hasMoreRestaurants = false
     @Published private(set) var restaurantError: String?
 
+    /// API'den çekilen tüm DB benzersiz şehirleri — filtre picker için.
+    @Published private(set) var restaurantDistinctCities: [String] = []
+    /// API'den çekilen tüm DB benzersiz mutfak türleri — filtre picker için.
+    @Published private(set) var restaurantDistinctCuisines: [String] = []
+
     // MARK: - Restaurants — Filtreler (view binding)
 
     @Published var restaurantSearchQuery = ""
@@ -58,10 +63,13 @@ final class AdminViewModel: ObservableObject {
 
     private var userFetchTask: Task<Void, Never>?
     private var restaurantFetchTask: Task<Void, Never>?
+    private var filterOptionsFetchTask: Task<Void, Never>?
 
     private var userOffset = 0
     private var restaurantOffset = 0
     private let pageSize = 50
+    /// Prefetch: liste sonuna bu kadar eleman kala sonraki sayfa yüklenir.
+    private let prefetchThreshold = 8
 
     // MARK: - Init
 
@@ -167,11 +175,32 @@ final class AdminViewModel: ObservableObject {
         hasMoreRestaurants = false
         restaurantError    = nil
         _fetchRestaurantsPage()
+        loadRestaurantFilterOptions()
     }
 
     func loadMoreRestaurants() {
         guard !isLoadingRestaurants, hasMoreRestaurants else { return }
         _fetchRestaurantsPage()
+    }
+
+    /// Proaktif prefetch — ForEach'teki currentIndex ile çağrılır.
+    func prefetchRestaurantsIfNeeded(currentIndex: Int) {
+        guard restaurants.count - currentIndex <= prefetchThreshold else { return }
+        loadMoreRestaurants()
+    }
+
+    /// Şehir + mutfak filtre seçeneklerini tüm DB'den API üzerinden çeker.
+    func loadRestaurantFilterOptions() {
+        filterOptionsFetchTask?.cancel()
+        filterOptionsFetchTask = Task { [weak self] in
+            guard let self else { return }
+            async let cities   = try? self.api.fetchDistinctRestaurantCities()
+            async let cuisines = try? self.api.fetchDistinctRestaurantCuisines()
+            let (c, q) = await (cities, cuisines)
+            guard !Task.isCancelled else { return }
+            if let c { self.restaurantDistinctCities   = c }
+            if let q { self.restaurantDistinctCuisines = q }
+        }
     }
 
     private func _fetchRestaurantsPage() {
@@ -269,6 +298,8 @@ final class AdminViewModel: ObservableObject {
         if let idx = restaurants.firstIndex(where: { $0.id == id }) {
             restaurants[idx] = updated
         }
+        // Aktif/pasif sayısı stats'ta değişti → yenile
+        loadStats(forceRefresh: true)
     }
 
     func performDeleteRestaurant(id: String) async throws {
@@ -298,13 +329,8 @@ final class AdminViewModel: ObservableObject {
         return (a, restaurants.count - a)
     }
 
-    var restaurantDistinctCities: [String] {
-        Array(Set(restaurants.compactMap(\.city).filter { !$0.isEmpty })).sorted()
-    }
-
-    var restaurantDistinctCuisines: [String] {
-        Array(Set(restaurants.map(\.cuisineType).filter { !$0.isEmpty })).sorted()
-    }
+    // restaurantDistinctCities ve restaurantDistinctCuisines artık @Published (API-backed).
+    // Tanımlar MARK: Restaurants — Veri bölümünde.
 
     // MARK: - Private Helpers
 

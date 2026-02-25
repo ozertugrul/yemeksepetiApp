@@ -7,6 +7,7 @@ struct AdminRestaurantListView: View {
 
     // ── UI-only state ────────────────────────────────────────────────────────
     @State private var showingAddRestaurant   = false
+    @State private var showingEditRestaurant  = false  // NavigationLink inside confirmationDialog is broken iOS15+ — use separate sheet
     @State private var activeRestaurant: Restaurant?
     @State private var showingActionSheet     = false
     @State private var alertMessage: String?
@@ -43,6 +44,20 @@ struct AdminRestaurantListView: View {
                 showingAddRestaurant = false
             }
         }
+        .sheet(isPresented: $showingEditRestaurant) {
+            if let r = activeRestaurant {
+                NavigationView {
+                    EditRestaurantView(
+                        restaurant: r,
+                        dataService: viewModel.dataService,
+                        onSave: {
+                            adminVM.reloadRestaurants()
+                            showingEditRestaurant = false
+                        }
+                    )
+                }
+            }
+        }
         .sheet(isPresented: $showingCityFilter)    { cityFilterSheet }
         .sheet(isPresented: $showingCuisineFilter) { cuisineFilterSheet }
         .confirmationDialog(
@@ -51,13 +66,7 @@ struct AdminRestaurantListView: View {
             titleVisibility: .visible
         ) {
             if let r = activeRestaurant {
-                NavigationLink(destination: EditRestaurantView(
-                    restaurant: r,
-                    dataService: viewModel.dataService,
-                    onSave: { adminVM.reloadRestaurants() }
-                )) {
-                    Text("Düzenle")
-                }
+                Button("Düzenle") { showingEditRestaurant = true }
                 Button(r.isActive ? "Pasife Al" : "Aktife Al") {
                     performToggleActive(r)
                 }
@@ -74,7 +83,7 @@ struct AdminRestaurantListView: View {
         HStack(spacing: 8) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                TextField("Restoran adi, mutfak veya sehir ara...",
+                TextField("Restoran adı, mutfak veya şehir ara...",
                           text: $adminVM.restaurantSearchQuery)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
@@ -193,11 +202,12 @@ struct AdminRestaurantListView: View {
             Spacer()
         } else {
             List {
-                ForEach(adminVM.restaurants) { restaurant in
+                ForEach(Array(adminVM.restaurants.enumerated()), id: \.element.id) { idx, restaurant in
                     RestaurantRow(restaurant: restaurant) {
                         activeRestaurant   = restaurant
                         showingActionSheet = true
                     }
+                    .onAppear { adminVM.prefetchRestaurantsIfNeeded(currentIndex: idx) }
                 }
                 if adminVM.hasMoreRestaurants {
                     HStack {

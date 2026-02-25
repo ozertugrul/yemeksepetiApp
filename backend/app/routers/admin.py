@@ -336,6 +336,9 @@ async def list_restaurants_paged(
     )
 
 
+# ── Restoran Toggle Active ────────────────────────────────────────────────────
+
+@router.patch("/restaurants/{restaurant_id}/toggle", response_model=RestaurantOut)
 async def toggle_restaurant_active(
     restaurant_id: str,
     db: AsyncSession = Depends(get_db),
@@ -349,7 +352,38 @@ async def toggle_restaurant_active(
     return _restaurant_schema(updated)
 
 
-# ── Ortak Sahip Ata ───────────────────────────────────────────────────────────
+# ── Distinct Filtre Değerleri ─────────────────────────────────────────────────
+
+@router.get("/restaurants/distinct-cities", response_model=List[str])
+async def distinct_restaurant_cities(
+    db: AsyncSession = Depends(get_db),
+    _user: FirebaseUser = Depends(require_role("admin")),
+):
+    """Veritabanındaki tüm benzersiz restoran şehirlerini döndürür."""
+    from sqlalchemy import distinct as sa_distinct
+    result = await db.execute(
+        sa_select(sa_distinct(RestaurantORM.city))
+        .where(RestaurantORM.city.isnot(None), RestaurantORM.city != "")
+        .order_by(RestaurantORM.city)
+    )
+    return [row[0] for row in result.all()]
+
+
+@router.get("/restaurants/distinct-cuisines", response_model=List[str])
+async def distinct_restaurant_cuisines(
+    db: AsyncSession = Depends(get_db),
+    _user: FirebaseUser = Depends(require_role("admin")),
+):
+    """Veritabanındaki tüm benzersiz mutfak türlerini döndürür."""
+    from sqlalchemy import distinct as sa_distinct
+    result = await db.execute(
+        sa_select(sa_distinct(RestaurantORM.cuisine_type))
+        .where(RestaurantORM.cuisine_type.isnot(None), RestaurantORM.cuisine_type != "")
+        .order_by(RestaurantORM.cuisine_type)
+    )
+    return [row[0] for row in result.all()]
+
+
 
 class ManagedRestaurantBody(CamelModel):
     restaurant_id: Optional[str] = None   # None → ilişkiyi kes
