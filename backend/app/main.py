@@ -4,6 +4,7 @@ FastAPI uygulama giriş noktası.
 import logging
 from contextlib import asynccontextmanager
 
+import asyncpg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
@@ -53,6 +54,14 @@ async def sqlalchemy_exception_handler(_request: Request, _exc: SQLAlchemyError)
     return JSONResponse(
         status_code=503,
         content={"detail": "Veritabanı geçici olarak kullanılamıyor. Lütfen tekrar deneyin."},
+    )
+
+
+@app.exception_handler(asyncpg.PostgresError)
+async def asyncpg_exception_handler(_request: Request, _exc: asyncpg.PostgresError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Veritabanı bağlantısı kesildi. Lütfen tekrar deneyin."},
     )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────

@@ -1,11 +1,42 @@
+import asyncio
+from uuid import uuid4
+
+import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
-from uuid import uuid4
 
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+def _is_transient_db_error(exc: Exception) -> bool:
+    if isinstance(
+        exc,
+        (
+            TimeoutError,
+            ConnectionError,
+            asyncpg.exceptions.ConnectionDoesNotExistError,
+            asyncpg.exceptions.ConnectionFailureError,
+            asyncpg.exceptions.CannotConnectNowError,
+            asyncpg.exceptions.InterfaceError,
+        ),
+    ):
+        return True
+    msg = str(exc).lower()
+    return "connection was closed" in msg or "connection reset" in msg
+
+
+class ResilientAsyncSession(AsyncSession):
+    async def execute(self, *args, **kwargs):
+        try:
+            return await super().execute(*args, **kwargs)
+        except Exception as exc:
+            if not _is_transient_db_error(exc):
+                raise
+            await asyncio.sleep(0.15)
+            return await super().execute(*args, **kwargs)
 
 
 def _with_pg_bouncer_params(raw_url: str) -> str:
@@ -54,7 +85,7 @@ engine = create_async_engine(
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
-    class_=AsyncSession,
+    class_=ResilientAsyncSession,
     expire_on_commit=False,
 )
 
