@@ -48,6 +48,8 @@ final class RestaurantListViewModel: ObservableObject {
     private var offset = 0
     private let pageSize = 20
     private let prefetchThreshold = 5
+    private let cacheLifetime: TimeInterval = 5 * 60 // 5 dakika
+    private var lastLoadDate: Date?
 
     private var _cityFilter: String?
     private let cityFilterSubject = PassthroughSubject<String?, Never>()
@@ -84,6 +86,17 @@ final class RestaurantListViewModel: ObservableObject {
     }
 
     // MARK: - Public API
+
+    /// Veri taze ise ağ isteği yapmaz (5 dakika cache). HomeView.onAppear bunu çağırır.
+    func loadIfNeeded() {
+        if let lastLoad = lastLoadDate,
+           !restaurants.isEmpty,
+           Date().timeIntervalSince(lastLoad) < cacheLifetime {
+            // Taze veri var; şehir filtresi değiştiyse sadece filtreyi güncelle
+            return
+        }
+        reloadRestaurants()
+    }
 
     /// Filtreleri koruyarak baştan yükler (pull-to-refresh / ilk açılış / filtre değişimi)
     func reloadRestaurants() {
@@ -153,6 +166,7 @@ final class RestaurantListViewModel: ObservableObject {
                 self.offset  = (result.nextOffset ?? (currentOffset + result.restaurants.count))
                 self.hasMore = result.hasMore
                 self.error   = nil
+                if isFirstPage { self.lastLoadDate = Date() }
             } catch {
                 guard !Task.isCancelled else { return }
                 if isFirstPage { self.error = error.localizedDescription }

@@ -18,10 +18,17 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
 
 
 def _orm_to_schema(o) -> OrderOut:
+    restaurant_name = None
+    try:
+        if o.restaurant:
+            restaurant_name = o.restaurant.name
+    except Exception:
+        pass
     return OrderOut(
         id=o.id,
         user_id=o.user_id,
         restaurant_id=o.restaurant_id,
+        restaurant_name=restaurant_name,
         status=o.status,
         payment_method=o.payment_method,
         delivery_address=o.delivery_address,

@@ -163,6 +163,7 @@ class OrderOut(CamelModel):
     id: str
     user_id: str
     restaurant_id: str
+    restaurant_name: Optional[str] = None
     status: str
     payment_method: str
     delivery_address: Optional[Any] = None

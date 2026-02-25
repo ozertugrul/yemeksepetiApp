@@ -180,8 +180,14 @@ struct UserOrderCard: View {
                 .cornerRadius(8)
             }
 
-            Text(order.items.map { "\($0.quantity)x \($0.name)" }.joined(separator: " · "))
-                .font(.subheadline).foregroundColor(.secondary).lineLimit(2)
+            Text(order.items.map { item -> String in
+                var line = "\(item.quantity)x \(item.name)"
+                if !item.optionSummary.isEmpty {
+                    line += " (\(item.optionSummary))"
+                }
+                return line
+            }.joined(separator: "\n"))
+                .font(.subheadline).foregroundColor(.secondary)
 
             HStack {
                 Label(order.paymentMethod.displayName, systemImage: "creditcard")

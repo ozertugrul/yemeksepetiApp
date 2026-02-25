@@ -35,7 +35,7 @@ struct HomeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 restaurantVM.cityFilter = selectedCity
-                restaurantVM.reloadRestaurants()
+                restaurantVM.loadIfNeeded()
                 refreshAddresses()
             }
             .onReceive(viewModel.authService.$user) { user in

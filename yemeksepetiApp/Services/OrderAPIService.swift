@@ -7,6 +7,7 @@ struct APIOrderOut: Decodable {
     var id: String
     var userId: String
     var restaurantId: String
+    var restaurantName: String?
     var status: String
     var paymentMethod: String
     var deliveryAddress: APIDeliveryAddress?
@@ -21,11 +22,18 @@ struct APIOrderOut: Decodable {
     var createdAt: Date?
 
     /// Backend'den gelen Order'ı iOS modeline dönüştür
-    func toOrder(restaurantName: String = "") -> Order {
+    func toOrder(restaurantName fallbackName: String = "") -> Order {
         let status = OrderStatus(rawValue: self.status) ?? .pending
         let method = PaymentMethod(rawValue: self.paymentMethod) ?? .cashOnDelivery
-        // restaurantName backend'den gelmiyorsa restaurantId'yi göster
-        let resolvedName = restaurantName.isEmpty ? restaurantId : restaurantName
+        // Önce backend'den gelen adı kullan, sonra fallback, son çare restaurantId
+        let resolvedName: String
+        if let n = self.restaurantName, !n.isEmpty {
+            resolvedName = n
+        } else if !fallbackName.isEmpty {
+            resolvedName = fallbackName
+        } else {
+            resolvedName = restaurantId
+        }
         return Order(
             id: id,
             restaurantId: restaurantId,
