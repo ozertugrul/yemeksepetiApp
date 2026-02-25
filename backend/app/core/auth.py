@@ -127,8 +127,11 @@ async def get_optional_user(
     if not credentials:
         return None
     try:
-        return await get_current_user(credentials, db)
-    except HTTPException:
+        # İlk olarak Firebase token doğrulaması yapılır (FirebaseUser döner),
+        # ardından PostgreSQL rol kontrolü ile get_current_user çağrılır.
+        identity = await get_firebase_identity(credentials)
+        return await get_current_user(identity, db)
+    except Exception:
         return None
 
 
