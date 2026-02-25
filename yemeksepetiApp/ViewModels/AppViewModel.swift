@@ -62,10 +62,23 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    func fetchUsersPage(offset: Int, limit: Int = 50, completion: @escaping (AdminUsersPage?, String?) -> Void) {
+    func fetchUsersPage(
+        offset: Int,
+        limit: Int = 50,
+        search: String? = nil,
+        role: UserRole? = nil,
+        city: String? = nil,
+        completion: @escaping (AdminUsersPage?, String?) -> Void
+    ) {
         Task {
             do {
-                let page = try await adminAPI.fetchUsersPage(offset: offset, limit: limit)
+                let page = try await adminAPI.fetchUsersPage(
+                    offset: offset,
+                    limit: limit,
+                    search: search,
+                    role: role,
+                    city: city
+                )
                 completion(page, nil)
             } catch {
                 completion(nil, error.localizedDescription)

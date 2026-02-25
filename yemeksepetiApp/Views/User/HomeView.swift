@@ -133,6 +133,15 @@ struct HomeView: View {
                     }
                 )
             }
+            .onChange(of: selectedAddress?.id) { newId in
+                if let newId { viewModel.selectedAddressId = newId }
+            }
+            .onChange(of: viewModel.selectedAddressId) { newId in
+                guard let newId, newId != selectedAddress?.id else { return }
+                if let match = savedAddresses.first(where: { $0.id == newId }) {
+                    selectedAddress = match
+                }
+            }
             .sheet(isPresented: $showingAddAddress, onDismiss: { refreshAddresses() }) {
                 AddAddressView(viewModel: viewModel)
             }
@@ -256,12 +265,21 @@ struct HomeView: View {
         guard let resolvedUid else { return }
         viewModel.dataService.fetchAddresses(uid: resolvedUid) { addresses in
             savedAddresses = addresses
-            // Keep current selection if still valid; otherwise pick default/first
-            if let current = selectedAddress, addresses.contains(where: { $0.id == current.id }) {
-                // re-assign to get fresh data
+
+            // Shared id from checkout (or previous selection)
+            let sharedId = viewModel.selectedAddressId
+
+            if let sid = sharedId, let match = addresses.first(where: { $0.id == sid }) {
+                selectedAddress = match
+            } else if let current = selectedAddress, addresses.contains(where: { $0.id == current.id }) {
                 selectedAddress = addresses.first(where: { $0.id == current.id })
             } else {
                 selectedAddress = addresses.first(where: { $0.isDefault }) ?? addresses.first
+            }
+
+            // Sync shared id
+            if let addr = selectedAddress {
+                viewModel.selectedAddressId = addr.id
             }
         }
     }

@@ -15,6 +15,7 @@ struct CheckoutView: View {
     @State private var savedCards: [SavedCard] = []
     @State private var selectedAddress: UserAddress?
     @State private var selectedCard: SavedCard?
+    @State private var isAddressExpanded = false
     @State private var selectedPayment: PaymentMethod = .cashOnDelivery
     @State private var orderNote: String = ""
     @State private var isLoading = false
@@ -29,6 +30,9 @@ struct CheckoutView: View {
     @State private var couponCodeInput: String = ""
     @State private var couponError: String? = nil
     @State private var isValidatingCoupon = false
+    // Adres şehir uyuşmazlığı
+    @State private var showingCityMismatchAlert = false
+    @State private var pendingAddress: UserAddress?
 
     private var appliedDiscountTotal: Double { appliedCoupon?.discountAmount ?? 0 }
     private var finalTotal: Double { max(0, cart.total - appliedDiscountTotal) }
@@ -88,6 +92,22 @@ struct CheckoutView: View {
                 placedOrder = nil
             })
         }
+        .alert("Adres Değişikliği", isPresented: $showingCityMismatchAlert) {
+            Button("Sepeti Temizle", role: .destructive) {
+                cart.clear()
+                pendingAddress = nil
+                dismiss()
+            }
+            Button("İptal", role: .cancel) {
+                pendingAddress = nil
+            }
+        } message: {
+            if let pa = pendingAddress, let restCity = cart.restaurant?.city {
+                Text("Seçtiğiniz adres \(pa.city) şehrinde, restoran ise \(restCity) şehrinde. Devam ederseniz sepet içeriği silinecektir. Emin misiniz?")
+            } else {
+                Text("Farklı şehirdeki bir adres seçtiniz. Sepet içeriği silinecektir. Emin misiniz?")
+            }
+        }
     }
 
     // ── Address Section ───────────────────────────────────────────────────
@@ -101,16 +121,85 @@ struct CheckoutView: View {
                     .font(.caption).foregroundColor(.secondary)
                     .padding(.horizontal)
             } else {
-                VStack(spacing: 8) {
-                    ForEach(addresses) { address in
-                        AddressSelectionRow(
-                            address: address,
-                            isSelected: selectedAddress?.id == address.id
-                        ) {
-                            selectedAddress = address
+                VStack(spacing: 0) {
+                    // ── Selected address header (always visible) ──
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isAddressExpanded.toggle()
                         }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.orange)
+
+                            if let addr = selectedAddress {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(addr.title)
+                                            .font(.subheadline).fontWeight(.semibold)
+                                        if addr.isDefault {
+                                            Text("Varsayılan").font(.caption2)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                                .background(Color.green).cornerRadius(4)
+                                        }
+                                    }
+                                    Text(addr.fullAddress)
+                                        .font(.caption).foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            } else {
+                                Text("Adres seçin")
+                                    .font(.subheadline).foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .rotationEffect(.degrees(isAddressExpanded ? -180 : 0))
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.06))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+
+                    // ── Expandable address list ──
+                    if isAddressExpanded {
+                        VStack(spacing: 6) {
+                            ForEach(addresses.filter { $0.id != selectedAddress?.id }) { address in
+                                AddressSelectionRow(
+                                    address: address,
+                                    isSelected: false
+                                ) {
+                                    handleAddressSelection(address)
+                                }
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                    removal: .opacity
+                                ))
+                            }
+                        }
+                        .padding(.top, 6)
                     }
                 }
+                .padding(.horizontal)
+            }
+
+            // City mismatch warning
+            if let addr = selectedAddress, let restCity = cart.restaurant?.city,
+               !restCity.isEmpty, addr.city.lowercased() != restCity.lowercased() {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                    Text("Seçili adres (\(addr.city)) restoranın şehri (\(restCity)) ile uyuşmuyor. Bu adresle sipariş verilemez.")
+                        .font(.caption).foregroundColor(.red)
+                }
+                .padding(10)
+                .background(Color.red.opacity(0.08))
+                .cornerRadius(8)
                 .padding(.horizontal)
             }
 
@@ -428,7 +517,11 @@ struct CheckoutView: View {
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private var canPlaceOrder: Bool {
-        guard selectedAddress != nil else { return false }
+        guard let addr = selectedAddress else { return false }
+        // Adres şehri ile restoran şehri eşleşmeli
+        if let restCity = cart.restaurant?.city, !restCity.isEmpty {
+            if addr.city.lowercased() != restCity.lowercased() { return false }
+        }
         // Seçili ödeme yönteminin restoran tarafından desteklendiğini doğrula
         switch selectedPayment {
         case .cashOnDelivery, .cardOnDelivery: return allowsCashOnDelivery
@@ -461,7 +554,41 @@ struct CheckoutView: View {
         viewModel.dataService.fetchAddresses(uid: uid) { addrs in
             self.addresses = addrs
             if self.selectedAddress == nil || !addrs.contains(where: { $0.id == self.selectedAddress?.id }) {
-                self.selectedAddress = addrs.first(where: { $0.isDefault }) ?? addrs.first
+                // Shared seçimden başla
+                let sharedId = viewModel.selectedAddressId
+                let restCity = cart.restaurant?.city?.lowercased() ?? ""
+                let sameCityAddrs = addrs.filter { $0.city.lowercased() == restCity }
+
+                // Shared + same city?
+                if let sid = sharedId,
+                   let match = sameCityAddrs.first(where: { $0.id == sid }) {
+                    self.selectedAddress = match
+                } else {
+                    self.selectedAddress = sameCityAddrs.first(where: { $0.isDefault })
+                        ?? sameCityAddrs.first
+                        ?? addrs.first(where: { $0.isDefault })
+                        ?? addrs.first
+                }
+                // Sync back
+                if let addr = self.selectedAddress {
+                    viewModel.selectedAddressId = addr.id
+                }
+            }
+        }
+    }
+
+    /// Adres seçiminde şehir uyuşmazlığını kontrol eder
+    private func handleAddressSelection(_ address: UserAddress) {
+        let restCity = cart.restaurant?.city ?? ""
+        if !restCity.isEmpty && address.city.lowercased() != restCity.lowercased() {
+            pendingAddress = address
+            showingCityMismatchAlert = true
+        } else {
+            selectedAddress = address
+            // Ana sayfadaki adres seçimini de güncelle
+            viewModel.selectedAddressId = address.id
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                isAddressExpanded = false
             }
         }
     }

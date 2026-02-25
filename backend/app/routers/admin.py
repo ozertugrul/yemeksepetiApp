@@ -70,12 +70,24 @@ class AdminUsersPage(CamelModel):
 async def list_users_paged(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _user: FirebaseUser = Depends(require_role("admin")),
 ):
+    if role and role not in ("user", "storeOwner", "admin"):
+        raise HTTPException(status_code=422, detail=f"Geçersiz rol filtresi: {role!r}")
+
     repo = SQLUserRepository(db)
-    total = await repo.count_all()
-    rows = await repo.get_page(offset=offset, limit=limit)
+    total = await repo.count_filtered(search=search, role=role, city=city)
+    rows = await repo.get_page(
+        offset=offset,
+        limit=limit,
+        search=search,
+        role=role,
+        city=city,
+    )
     users = [_user_schema(u) for u in rows]
     next_offset = offset + len(users)
     has_more = next_offset < total

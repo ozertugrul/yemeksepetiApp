@@ -39,7 +39,6 @@ struct AdminUserListView: View {
     @State private var pageSize = 60
     @State private var hasMoreUsers = true
     @State private var totalUsersServer = 0
-    @State private var filterWorkItem: DispatchWorkItem?
     /// Tüm restoranları id → Restaurant haritası (storeOwner badge'i için)
     @State private var restaurantMap: [String: Restaurant] = [:]
 
@@ -48,6 +47,10 @@ struct AdminUserListView: View {
         if selectedRoleFilter != nil { c += 1 }
         if selectedCityFilter != nil { c += 1 }
         return c
+    }
+
+    private var hasServerFilters: Bool {
+        activeFilterCount > 0 || !debouncedQuery.isEmpty
     }
 
     var body: some View {
@@ -152,9 +155,9 @@ struct AdminUserListView: View {
             } else if visibleUsers.isEmpty {
                 Spacer()
                 VStack(spacing: 12) {
-                    Image(systemName: allUsers.isEmpty ? "person.slash" : "magnifyingglass")
+                    Image(systemName: hasServerFilters ? "magnifyingglass" : "person.slash")
                         .font(.system(size: 44)).foregroundColor(.gray)
-                    Text(allUsers.isEmpty ? "Henüz kullanıcı yok" : "Arama sonucu bulunamadı")
+                    Text(hasServerFilters ? "Arama sonucu bulunamadı" : "Henüz kullanıcı yok")
                         .foregroundColor(.secondary)
                     if !allUsers.isEmpty {
                         Text("Toplam \(allUsers.count) kullanıcı mevcut")
@@ -195,9 +198,7 @@ struct AdminUserListView: View {
                             }
                         }
                         .onAppear {
-                            if activeFilterCount == 0 && debouncedQuery.isEmpty {
-                                loadNextUsersPage()
-                            }
+                            loadNextUsersPage()
                         }
                     }
                 }
@@ -349,7 +350,7 @@ struct AdminUserListView: View {
                 if !cached.isEmpty {
                     allUsers = cached
                     recalculateCachedCounts(for: cached)
-                    applyLocalFilters()
+                    visibleUsers = cached
                 }
                 loadRestaurantsIfNeeded()
                 reloadUsersFromStart()
@@ -362,12 +363,11 @@ struct AdminUserListView: View {
                 .sink { debouncedQuery = $0 }
         }
         .onDisappear {
-            filterWorkItem?.cancel()
             searchCancellable?.cancel()
         }
-        .onChange(of: selectedRoleFilter) { _ in applyLocalFilters() }
-        .onChange(of: selectedCityFilter) { _ in applyLocalFilters() }
-        .onChange(of: debouncedQuery) { _ in applyLocalFilters() }
+        .onChange(of: selectedRoleFilter) { _ in reloadUsersFromStart() }
+        .onChange(of: selectedCityFilter) { _ in reloadUsersFromStart() }
+        .onChange(of: debouncedQuery) { _ in reloadUsersFromStart() }
     }
 
     // MARK: - Data Actions
@@ -397,7 +397,13 @@ struct AdminUserListView: View {
         isLoadingMore = true
 
         let offset = reset ? 0 : paginationOffset
-        viewModel.fetchUsersPage(offset: offset, limit: pageSize) { page, error in
+        viewModel.fetchUsersPage(
+            offset: offset,
+            limit: pageSize,
+            search: debouncedQuery,
+            role: selectedRoleFilter,
+            city: selectedCityFilter
+        ) { page, error in
             defer {
                 isLoadingMore = false
                 isLoading = false
@@ -422,41 +428,11 @@ struct AdminUserListView: View {
             }
 
             recalculateCachedCounts(for: allUsers)
-            applyLocalFilters()
-            viewModel.saveAdminUsersCache(allUsers)
-        }
-    }
-
-    private func applyLocalFilters() {
-        filterWorkItem?.cancel()
-        let users = allUsers
-        let selectedRole = selectedRoleFilter
-        let selectedCity = selectedCityFilter?.lowercased()
-        let query = debouncedQuery
-
-        let work = DispatchWorkItem {
-            var result = users
-            if let role = selectedRole {
-                result = result.filter { $0.role == role }
-            }
-            if let city = selectedCity {
-                result = result.filter { ($0.city ?? "").lowercased() == city }
-            }
-            if !query.isEmpty {
-                result = result.filter {
-                    $0.email.lowercased().contains(query) ||
-                    ($0.fullName ?? "").lowercased().contains(query)
-                }
-            }
-
-            DispatchQueue.main.async {
-                if !work.isCancelled {
-                    visibleUsers = result
-                }
+            visibleUsers = allUsers
+            if !hasServerFilters {
+                viewModel.saveAdminUsersCache(allUsers)
             }
         }
-        filterWorkItem = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func loadAllUsers() {

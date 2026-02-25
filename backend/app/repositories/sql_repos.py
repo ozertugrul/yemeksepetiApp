@@ -7,7 +7,7 @@ import uuid
 from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import func, select, update, delete
+from sqlalchemy import func, or_, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -211,18 +211,67 @@ class SQLUserRepository(UserRepositoryBase):
         result = await self.db.execute(select(UserORM).order_by(UserORM.email))
         return result.scalars().all()
 
-    async def get_page(self, offset: int, limit: int) -> List[UserORM]:
-        result = await self.db.execute(
-            select(UserORM)
-            .order_by(UserORM.email)
-            .offset(offset)
-            .limit(limit)
-        )
+    async def get_page(
+        self,
+        offset: int,
+        limit: int,
+        search: Optional[str] = None,
+        role: Optional[str] = None,
+        city: Optional[str] = None,
+    ) -> List[UserORM]:
+        query = select(UserORM)
+        filters = self._build_filters(search=search, role=role, city=city)
+        if filters:
+            query = query.where(*filters)
+        query = query.order_by(UserORM.email).offset(offset).limit(limit)
+        result = await self.db.execute(query)
         return result.scalars().all()
 
     async def count_all(self) -> int:
         result = await self.db.execute(select(func.count()).select_from(UserORM))
         return int(result.scalar_one() or 0)
+
+    async def count_filtered(
+        self,
+        search: Optional[str] = None,
+        role: Optional[str] = None,
+        city: Optional[str] = None,
+    ) -> int:
+        query = select(func.count()).select_from(UserORM)
+        filters = self._build_filters(search=search, role=role, city=city)
+        if filters:
+            query = query.where(*filters)
+        result = await self.db.execute(query)
+        return int(result.scalar_one() or 0)
+
+    @staticmethod
+    def _build_filters(
+        search: Optional[str],
+        role: Optional[str],
+        city: Optional[str],
+    ) -> List[Any]:
+        filters: List[Any] = []
+
+        if role:
+            filters.append(UserORM.role == role)
+
+        if city:
+            city_text = city.strip()
+            if city_text:
+                filters.append(UserORM.city.ilike(f"%{city_text}%"))
+
+        if search:
+            search_text = search.strip()
+            if search_text:
+                like = f"%{search_text}%"
+                filters.append(
+                    or_(
+                        UserORM.email.ilike(like),
+                        UserORM.display_name.ilike(like),
+                    )
+                )
+
+        return filters
 
     async def delete_by_id(self, user_id: str) -> bool:
         result = await self.db.execute(

@@ -79,14 +79,40 @@ struct AdminAPIService {
         return users
     }
 
-    func fetchUsersPage(offset: Int, limit: Int = 50) async throws -> AdminUsersPage {
+    func fetchUsersPage(
+        offset: Int,
+        limit: Int = 50,
+        search: String? = nil,
+        role: UserRole? = nil,
+        city: String? = nil
+    ) async throws -> AdminUsersPage {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if let search, !search.trimmingCharacters(in: .whitespaces).isEmpty {
+            queryItems.append(URLQueryItem(name: "search", value: search))
+        }
+        if let role {
+            let backendRole: String
+            switch role {
+            case .superAdmin:
+                backendRole = "admin"
+            case .storeOwner:
+                backendRole = "storeOwner"
+            case .user:
+                backendRole = "user"
+            }
+            queryItems.append(URLQueryItem(name: "role", value: backendRole))
+        }
+        if let city, !city.trimmingCharacters(in: .whitespaces).isEmpty {
+            queryItems.append(URLQueryItem(name: "city", value: city))
+        }
+
         let api = try await client.get(
             APIAdminUsersPage.self,
             path: "/admin/users/paged",
-            queryItems: [
-                URLQueryItem(name: "offset", value: String(offset)),
-                URLQueryItem(name: "limit", value: String(limit)),
-            ]
+            queryItems: queryItems
         )
         let users = api.users.map { $0.toAppUser() }
         return AdminUsersPage(
