@@ -6,16 +6,30 @@ from __future__ import annotations
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, distinct
+from app.models.orm_models import RestaurantORM
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import FirebaseUser, get_current_user, get_optional_user, require_role
 from app.core.database import get_db
 from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository, SQLUserRepository  # noqa: F401 (SQLUserRepository co-owner için)
 from app.schemas.schemas import (
+    CamelModel,
     MenuItemCreate, MenuItemOut,
     RestaurantCreate, RestaurantOut,
 )
+
+
+# ── Sayfalı yanıt şeması ──────────────────────────────────────────────────────
+
+class RestaurantsPage(CamelModel):
+    restaurants: List[RestaurantOut]
+    total: int
+    offset: int
+    limit: int
+    next_offset: Optional[int] = None
+    has_more: bool
 from app.services.embedding_service import EmbeddingService
 
 router = APIRouter(prefix="/restaurants", tags=["Restaurants"])
@@ -109,6 +123,58 @@ async def get_my_restaurant(
     if not r:
         raise HTTPException(status_code=404, detail="Restoranınız bulunamadı.")
     return _orm_to_schema(r, include_menu=True)
+
+
+@router.get("/paged", response_model=RestaurantsPage)
+async def list_restaurants_paged(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    cuisine: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+):
+    """Sayfalanmış aktif restoranlar — arama + şehir + mutfak filtresi."""
+    repo = SQLRestaurantRepository(db)
+    total = await repo.count_page_filtered(
+        search=search, city=city, cuisine=cuisine, is_active=True
+    )
+    rows = await repo.get_page_filtered(
+        offset=offset, limit=limit, search=search, city=city, cuisine=cuisine, is_active=True
+    )
+    items = [_orm_to_schema(r) for r in rows]
+    next_off = offset + len(items)
+    has_more = next_off < total
+    return RestaurantsPage(
+        restaurants=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+        next_offset=next_off if has_more else None,
+        has_more=has_more,
+    )
+
+
+@router.get("/distinct-cuisines", response_model=List[str])
+async def list_distinct_cuisines(
+    city: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+):
+    """Aktif restoranların benzersiz mutfak türleri."""
+    query = (
+        select(distinct(RestaurantORM.cuisine_type))
+        .where(RestaurantORM.is_active == True)  # noqa: E712
+        .where(RestaurantORM.cuisine_type != None)  # noqa: E711
+        .where(RestaurantORM.cuisine_type != "")
+    )
+    if city:
+        query = query.where(RestaurantORM.city.ilike(f"%{city.strip()}%"))
+    result = await db.execute(query)
+    cuisines = [row[0] for row in result.all()]
+    cuisines.sort()
+    return cuisines
 
 
 @router.get("/{restaurant_id}", response_model=RestaurantOut)

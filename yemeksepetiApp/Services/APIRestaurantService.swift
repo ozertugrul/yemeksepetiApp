@@ -77,6 +77,17 @@ struct APIMenuItem: Decodable {
     }
 }
 
+// MARK: - Paginated response
+
+struct APIRestaurantsPage: Decodable {
+    var restaurants: [APIRestaurant]
+    var total: Int
+    var offset: Int
+    var limit: Int
+    var nextOffset: Int?
+    var hasMore: Bool
+}
+
 // MARK: - RestaurantAPIService
 
 /// FastAPI üzerinden restoran işlemleri.
@@ -99,6 +110,38 @@ struct RestaurantAPIService {
     func fetchMyRestaurant() async throws -> Restaurant {
         let r = try await client.get(APIRestaurant.self, path: "/restaurants/my")
         return r.toRestaurant()
+    }
+
+    // MARK: - Paginated (HomeView)
+
+    func fetchActivePage(
+        offset: Int,
+        limit: Int = 20,
+        search: String? = nil,
+        city: String? = nil,
+        cuisine: String? = nil
+    ) async throws -> (restaurants: [Restaurant], total: Int, hasMore: Bool, nextOffset: Int?) {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "offset", value: "\(offset)"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        if let s = search, !s.isEmpty   { items.append(URLQueryItem(name: "search",  value: s)) }
+        if let c = city, !c.isEmpty     { items.append(URLQueryItem(name: "city",    value: c)) }
+        if let cu = cuisine, !cu.isEmpty { items.append(URLQueryItem(name: "cuisine", value: cu)) }
+
+        let page = try await client.get(APIRestaurantsPage.self, path: "/restaurants/paged", queryItems: items)
+        return (
+            restaurants: page.restaurants.map { $0.toRestaurant() },
+            total: page.total,
+            hasMore: page.hasMore,
+            nextOffset: page.nextOffset
+        )
+    }
+
+    func fetchDistinctCuisines(city: String? = nil) async throws -> [String] {
+        var items: [URLQueryItem] = []
+        if let c = city, !c.isEmpty { items.append(URLQueryItem(name: "city", value: c)) }
+        return try await client.get([String].self, path: "/restaurants/distinct-cuisines", queryItems: items)
     }
 
     // MARK: - Admin / Owner CRUD

@@ -4,9 +4,7 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var viewModel: AppViewModel
-    @State private var allRestaurants: [Restaurant] = []
-    @State private var isLoading = false
-    @State private var searchQuery = ""
+    @StateObject private var restaurantVM = RestaurantListViewModel(api: RestaurantAPIService())
     @State private var showingAddressPicker = false
     @State private var showingAddAddress = false
     @State private var savedAddresses: [UserAddress] = []
@@ -27,92 +25,17 @@ struct HomeView: View {
         viewModel.authService.isAuthenticated && selectedCity == nil
     }
 
-    private var filteredRestaurants: [Restaurant] {
-        var result = allRestaurants
-        if let city = selectedCity {
-            result = result.filter { ($0.city ?? "").isEmpty || $0.city == city }
-        }
-        let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty {
-            result = result.filter {
-                $0.name.lowercased().contains(q) || $0.cuisineType.lowercased().contains(q)
-            }
-        }
-        return result
-    }
-
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if !needsCityOnboarding {
-                    // ── Address bar ──────────────────────────────────────
-                    addressBar
-                        .padding(.horizontal)
-                        .padding(.top, 6)
-                        .padding(.bottom, 8)
-
-                    // ── Search bar ───────────────────────────────────────
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                        TextField("Restoran veya mutfak ara...", text: $searchQuery)
-                            .textInputAutocapitalization(.never)
-                        if !searchQuery.isEmpty {
-                            Button { searchQuery = "" } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
-                            }
-                        }
-                    }
-                    .padding(10)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-
-                    Divider()
-                }
-
-                // ── Content ──────────────────────────────────────────────
-                if needsCityOnboarding {
-                    cityOnboardingView
-                } else if isLoading {
-                    Spacer()
-                    ProgressView("Mağazalar yükleniyor...")
-                    Spacer()
-                } else if filteredRestaurants.isEmpty {
-                    Spacer()
-                    VStack(spacing: 14) {
-                        Image(systemName: "storefront")
-                            .font(.system(size: 52)).foregroundColor(.orange.opacity(0.6))
-                        if let city = selectedCity {
-                            Text("\(city)'de mağaza bulunamadı").font(.headline)
-                            Text("Bu şehirde henüz hizmet verilmiyor olabilir.")
-                                .font(.subheadline).foregroundColor(.secondary)
-                            Button("Adresi Değiştir") { showingAddressPicker = true }
-                                .buttonStyle(.borderedProminent).tint(.orange)
-                        } else {
-                            Text("Restoran bulunamadı").foregroundColor(.secondary)
-                        }
-                    }
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(filteredRestaurants) { restaurant in
-                                NavigationLink(destination: RestaurantDetailView(restaurant: restaurant, viewModel: viewModel)) {
-                                    RestaurantCard(restaurant: restaurant)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding()
-                    }
-                    .refreshable { loadRestaurants() }
-                }
+                if !needsCityOnboarding { searchHeader }
+                contentArea
             }
             .navigationTitle("Yemeksepeti")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                loadRestaurants()
+                restaurantVM.cityFilter = selectedCity
+                restaurantVM.reloadRestaurants()
                 refreshAddresses()
             }
             .onReceive(viewModel.authService.$user) { user in
@@ -135,6 +58,7 @@ struct HomeView: View {
             }
             .onChange(of: selectedAddress?.id) { newId in
                 if let newId { viewModel.selectedAddressId = newId }
+                restaurantVM.cityFilter = selectedCity
             }
             .onChange(of: viewModel.selectedAddressId) { newId in
                 guard let newId, newId != selectedAddress?.id else { return }
@@ -150,6 +74,134 @@ struct HomeView: View {
             }) {
                 CityPickerSheet(selectedCity: $pickerCity)
             }
+        }
+    }
+
+    // MARK: - Header (address + search + cuisine chips)
+
+    @ViewBuilder
+    private var searchHeader: some View {
+        addressBar
+            .padding(.horizontal)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundColor(.gray)
+            TextField("Restoran veya mutfak ara...", text: $restaurantVM.searchQuery)
+                .textInputAutocapitalization(.never)
+            if !restaurantVM.searchQuery.isEmpty {
+                Button { restaurantVM.searchQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+        .padding(.bottom, restaurantVM.availableCuisines.isEmpty ? 8 : 4)
+
+        if !restaurantVM.availableCuisines.isEmpty {
+            cuisineChips
+        }
+
+        Divider()
+    }
+
+    @ViewBuilder
+    private var cuisineChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                FilterChip(label: "Tümü", isActive: restaurantVM.cuisineFilter == nil) {
+                    restaurantVM.cuisineFilter = nil
+                }
+                ForEach(restaurantVM.availableCuisines, id: \.self) { cuisine in
+                    FilterChip(
+                        label: cuisine,
+                        isActive: restaurantVM.cuisineFilter == cuisine
+                    ) {
+                        restaurantVM.cuisineFilter =
+                            restaurantVM.cuisineFilter == cuisine ? nil : cuisine
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+    }
+
+    // MARK: - Content area
+
+    @ViewBuilder
+    private var contentArea: some View {
+        if needsCityOnboarding {
+            cityOnboardingView
+        } else if restaurantVM.isLoading {
+            loadingView
+        } else if restaurantVM.restaurants.isEmpty {
+            emptyRestaurantsView
+        } else {
+            restaurantListView
+        }
+    }
+
+    @ViewBuilder
+    private var loadingView: some View {
+        Spacer()
+        ProgressView("Mağazalar yükleniyor...")
+        Spacer()
+    }
+
+    @ViewBuilder
+    private var emptyRestaurantsView: some View {
+        Spacer()
+        VStack(spacing: 14) {
+            Image(systemName: "storefront")
+                .font(.system(size: 52)).foregroundColor(.orange.opacity(0.6))
+            if let city = selectedCity {
+                Text("\(city)'de mağaza bulunamadı").font(.headline)
+                Text("Bu şehirde henüz hizmet verilmiyor olabilir.")
+                    .font(.subheadline).foregroundColor(.secondary)
+                Button("Adresi Değiştir") { showingAddressPicker = true }
+                    .buttonStyle(.borderedProminent).tint(.orange)
+            } else {
+                Text("Restoran bulunamadı").foregroundColor(.secondary)
+            }
+        }
+        Spacer()
+    }
+
+    @ViewBuilder
+    private var restaurantListView: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(Array(restaurantVM.restaurants.enumerated()), id: \.element.id) { index, restaurant in
+                    NavigationLink(destination: RestaurantDetailView(restaurant: restaurant, viewModel: viewModel)) {
+                        RestaurantCard(restaurant: restaurant)
+                    }
+                    .buttonStyle(.plain)
+                    .onAppear { restaurantVM.prefetchIfNeeded(currentIndex: index) }
+                }
+                paginationFooter
+            }
+            .padding()
+        }
+        .refreshable { restaurantVM.reloadRestaurants() }
+    }
+
+    @ViewBuilder
+    private var paginationFooter: some View {
+        if restaurantVM.isLoadingMore {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        } else if restaurantVM.hasMore {
+            Button("Daha fazla yükle") { restaurantVM.loadMoreRestaurants() }
+                .font(.subheadline)
+                .foregroundColor(.orange)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
         }
     }
 
@@ -251,14 +303,6 @@ struct HomeView: View {
     }
 
     // MARK: - Helpers
-
-    private func loadRestaurants() {
-        isLoading = true
-        viewModel.dataService.fetchRestaurants { fetched in
-            allRestaurants = fetched
-            isLoading = false
-        }
-    }
 
     private func refreshAddresses(uid: String? = nil) {
         let resolvedUid = uid ?? viewModel.authService.currentUser?.id
