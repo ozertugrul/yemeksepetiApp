@@ -2,6 +2,8 @@ import asyncio
 from uuid import uuid4
 
 import asyncpg
+from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
@@ -101,6 +103,12 @@ async def get_db() -> AsyncSession:
         try:
             yield session
             await session.commit()
+        except (TimeoutError, asyncpg.PostgresError, SQLAlchemyError):
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Veritabanı geçici olarak kullanılamıyor. Lütfen tekrar deneyin.",
+            )
         except Exception:
             await session.rollback()
             raise
