@@ -6,6 +6,7 @@ struct AdminUserListView: View {
     @State private var searchQuery = ""
     @State private var debouncedQuery = ""
     @State private var allUsers: [AppUser] = []
+    @State private var visibleUsers: [AppUser] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     // Filtreler
@@ -38,29 +39,9 @@ struct AdminUserListView: View {
     @State private var pageSize = 60
     @State private var hasMoreUsers = true
     @State private var totalUsersServer = 0
+    @State private var filterWorkItem: DispatchWorkItem?
     /// Tüm restoranları id → Restaurant haritası (storeOwner badge'i için)
     @State private var restaurantMap: [String: Restaurant] = [:]
-
-    private var filteredUsers: [AppUser] {
-        var result = allUsers
-        // Rol filtresi
-        if let role = selectedRoleFilter {
-            result = result.filter { $0.role == role }
-        }
-        // Şehir filtresi
-        if let city = selectedCityFilter {
-            result = result.filter { ($0.city ?? "").lowercased() == city.lowercased() }
-        }
-        // Arama (debounced)
-        let q = debouncedQuery
-        if !q.isEmpty {
-            result = result.filter {
-                $0.email.lowercased().contains(q) ||
-                ($0.fullName ?? "").lowercased().contains(q)
-            }
-        }
-        return result
-    }
 
     private var activeFilterCount: Int {
         var c = 0
@@ -168,7 +149,7 @@ struct AdminUserListView: View {
                 Spacer()
                 ProgressView("Kullanıcılar yükleniyor...")
                 Spacer()
-            } else if filteredUsers.isEmpty {
+            } else if visibleUsers.isEmpty {
                 Spacer()
                 VStack(spacing: 12) {
                     Image(systemName: allUsers.isEmpty ? "person.slash" : "magnifyingglass")
@@ -182,31 +163,42 @@ struct AdminUserListView: View {
                 }
                 Spacer()
             } else {
-                List(filteredUsers) { user in
-                    UserRow(
-                        user: user,
-                        restaurant: user.managedRestaurantId.flatMap { restaurantMap[$0] },
-                        onEdit: {
-                            activeUser = user
-                            showingRoleSheet = true
-                        }
-                    )
-                }
-                if hasMoreUsers {
-                    HStack {
-                        Spacer()
-                        if isLoadingMore {
-                            ProgressView().padding(.vertical, 8)
-                        } else {
-                            Text("Daha fazla yüklemek için kaydır")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.vertical, 8)
-                        }
-                        Spacer()
+                List {
+                    ForEach(visibleUsers) { user in
+                        UserRow(
+                            user: user,
+                            restaurant: user.managedRestaurantId.flatMap { restaurantMap[$0] },
+                            onEdit: {
+                                activeUser = user
+                                showingRoleSheet = true
+                            }
+                        )
                     }
-                    .onAppear {
-                        loadNextUsersPage()
+
+                    if hasMoreUsers {
+                        HStack {
+                            Spacer()
+                            if isLoadingMore {
+                                ProgressView().padding(.vertical, 8)
+                            } else {
+                                Text("Daha fazla yükle")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.vertical, 8)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if !isLoadingMore {
+                                loadNextUsersPage()
+                            }
+                        }
+                        .onAppear {
+                            if activeFilterCount == 0 && debouncedQuery.isEmpty {
+                                loadNextUsersPage()
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -357,6 +349,7 @@ struct AdminUserListView: View {
                 if !cached.isEmpty {
                     allUsers = cached
                     recalculateCachedCounts(for: cached)
+                    applyLocalFilters()
                 }
                 loadRestaurantsIfNeeded()
                 reloadUsersFromStart()
@@ -369,8 +362,12 @@ struct AdminUserListView: View {
                 .sink { debouncedQuery = $0 }
         }
         .onDisappear {
+            filterWorkItem?.cancel()
             searchCancellable?.cancel()
         }
+        .onChange(of: selectedRoleFilter) { _ in applyLocalFilters() }
+        .onChange(of: selectedCityFilter) { _ in applyLocalFilters() }
+        .onChange(of: debouncedQuery) { _ in applyLocalFilters() }
     }
 
     // MARK: - Data Actions
@@ -425,8 +422,41 @@ struct AdminUserListView: View {
             }
 
             recalculateCachedCounts(for: allUsers)
+            applyLocalFilters()
             viewModel.saveAdminUsersCache(allUsers)
         }
+    }
+
+    private func applyLocalFilters() {
+        filterWorkItem?.cancel()
+        let users = allUsers
+        let selectedRole = selectedRoleFilter
+        let selectedCity = selectedCityFilter?.lowercased()
+        let query = debouncedQuery
+
+        let work = DispatchWorkItem {
+            var result = users
+            if let role = selectedRole {
+                result = result.filter { $0.role == role }
+            }
+            if let city = selectedCity {
+                result = result.filter { ($0.city ?? "").lowercased() == city }
+            }
+            if !query.isEmpty {
+                result = result.filter {
+                    $0.email.lowercased().contains(query) ||
+                    ($0.fullName ?? "").lowercased().contains(query)
+                }
+            }
+
+            DispatchQueue.main.async {
+                if !work.isCancelled {
+                    visibleUsers = result
+                }
+            }
+        }
+        filterWorkItem = work
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func loadAllUsers() {
