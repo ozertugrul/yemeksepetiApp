@@ -5,10 +5,10 @@ struct AdminRestaurantListView: View {
     @ObservedObject var viewModel: AppViewModel
     @ObservedObject var adminVM: AdminViewModel
 
-    // UI-only state
+    // ── UI-only state ────────────────────────────────────────────────────────
     @State private var showingAddRestaurant   = false
-    @State private var restaurantToDelete: Restaurant?
-    @State private var showingDeleteConfirm   = false
+    @State private var activeRestaurant: Restaurant?
+    @State private var showingActionSheet     = false
     @State private var alertMessage: String?
     @State private var showingAlert           = false
     @State private var showingCityFilter      = false
@@ -32,13 +32,7 @@ struct AdminRestaurantListView: View {
         .navigationTitle(adminVM.restaurants.isEmpty
             ? "Restoranlar"
             : "Restoranlar (\(adminVM.restaurantTotal))")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingAddRestaurant = true } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
+        .toolbar { toolbarContent }
         .onAppear {
             if adminVM.restaurants.isEmpty { adminVM.reloadRestaurants() }
         }
@@ -52,16 +46,24 @@ struct AdminRestaurantListView: View {
         .sheet(isPresented: $showingCityFilter)    { cityFilterSheet }
         .sheet(isPresented: $showingCuisineFilter) { cuisineFilterSheet }
         .confirmationDialog(
-            restaurantToDelete.map { "\'\($0.name)\' silinsin mi?" } ?? "Restoran Sil",
-            isPresented: $showingDeleteConfirm,
+            activeRestaurant.map { "\($0.name)" } ?? "Restoran İşlemleri",
+            isPresented: $showingActionSheet,
             titleVisibility: .visible
         ) {
-            Button("Evet, Kalici Olarak Sil", role: .destructive) {
-                if let r = restaurantToDelete { performDelete(r) }
+            if let r = activeRestaurant {
+                NavigationLink(destination: EditRestaurantView(
+                    restaurant: r,
+                    dataService: viewModel.dataService,
+                    onSave: { adminVM.reloadRestaurants() }
+                )) {
+                    Text("Düzenle")
+                }
+                Button(r.isActive ? "Pasife Al" : "Aktife Al") {
+                    performToggleActive(r)
+                }
+                Button("Sil", role: .destructive) { performDelete(r) }
+                Button("İptal", role: .cancel) { activeRestaurant = nil }
             }
-            Button("Iptal", role: .cancel) { restaurantToDelete = nil }
-        } message: {
-            Text("Bu islem geri alinamaz. Restorana ait tum menu ogeleri de silinir.")
         }
         .alert(alertMessage ?? "", isPresented: $showingAlert) {
             Button("Tamam", role: .cancel) {}
@@ -109,7 +111,7 @@ struct AdminRestaurantListView: View {
                 }
                 Divider().frame(height: 24)
                 FilterChip(
-                    label: adminVM.restaurantCityFilter ?? "Sehir",
+                    label: adminVM.restaurantCityFilter ?? "Şehir",
                     isActive: adminVM.restaurantCityFilter != nil,
                     color: .blue, icon: "mappin.circle.fill"
                 ) { showingCityFilter = true }
@@ -167,7 +169,7 @@ struct AdminRestaurantListView: View {
     private var contentArea: some View {
         if adminVM.isLoadingRestaurants && adminVM.restaurants.isEmpty {
             Spacer()
-            ProgressView("Restoranlar yukleniyor...")
+            ProgressView("Restoranlar yükleniyor...")
             Spacer()
         } else if adminVM.restaurants.isEmpty {
             Spacer()
@@ -176,7 +178,7 @@ struct AdminRestaurantListView: View {
                     ? "magnifyingglass" : "building.2.slash")
                     .font(.system(size: 44)).foregroundColor(.gray)
                 Text(activeFilterCount > 0 || !adminVM.restaurantSearchQuery.isEmpty
-                    ? "Sonuc bulunamadi" : "Henuz restoran yok")
+                    ? "Sonuç bulunamadı" : "Henüz restoran yok")
                     .foregroundColor(.secondary)
                 if activeFilterCount > 0 {
                     Button("Filtreleri Temizle") {
@@ -192,12 +194,9 @@ struct AdminRestaurantListView: View {
         } else {
             List {
                 ForEach(adminVM.restaurants) { restaurant in
-                    NavigationLink(destination: EditRestaurantView(
-                        restaurant: restaurant,
-                        dataService: viewModel.dataService,
-                        onSave: { adminVM.reloadRestaurants() }
-                    )) {
-                        restaurantRow(restaurant)
+                    RestaurantRow(restaurant: restaurant) {
+                        activeRestaurant   = restaurant
+                        showingActionSheet = true
                     }
                 }
                 if adminVM.hasMoreRestaurants {
@@ -206,7 +205,7 @@ struct AdminRestaurantListView: View {
                         if adminVM.isLoadingRestaurants {
                             ProgressView().padding(.vertical, 8)
                         } else {
-                            Text("Daha fazla yukle")
+                            Text("Daha fazla yükle")
                                 .font(.caption).foregroundColor(.secondary).padding(.vertical, 8)
                         }
                         Spacer()
@@ -220,28 +219,33 @@ struct AdminRestaurantListView: View {
         }
     }
 
-    @ViewBuilder
-    private func restaurantRow(_ restaurant: Restaurant) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(restaurant.name).font(.headline)
-                Text(restaurant.cuisineType).font(.subheadline).foregroundColor(.gray)
-                if let city = restaurant.city, !city.isEmpty {
-                    Text(city).font(.caption).foregroundColor(.secondary)
+    // RestaurantRow is a standalone struct defined after this main struct (see below)
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+                Button { showingAddRestaurant = true } label: {
+                    Label("Yeni Restoran Ekle", systemImage: "plus.square.fill")
                 }
-            }
-            Spacer()
-            Image(systemName: restaurant.isActive ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(restaurant.isActive ? .green : .red)
-            Button {
-                restaurantToDelete   = restaurant
-                showingDeleteConfirm = true
+                Divider()
+                Button { withAnimation { adminVM.restaurantActiveFilter = true } } label: {
+                    Label("Sadece Aktifleri Göster", systemImage: "checkmark.circle")
+                }
+                Button { withAnimation { adminVM.restaurantActiveFilter = false } } label: {
+                    Label("Sadece Pasifleri Göster", systemImage: "xmark.circle")
+                }
+                if adminVM.restaurantActiveFilter != nil {
+                    Button(role: .destructive) {
+                        withAnimation { adminVM.restaurantActiveFilter = nil }
+                    } label: {
+                        Label("Aktif Filtresini Kaldır", systemImage: "xmark")
+                    }
+                }
             } label: {
-                Image(systemName: "trash").foregroundColor(.red).padding(.leading, 8)
+                Image(systemName: "ellipsis.circle")
             }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
     }
 
     @ViewBuilder private var cityFilterSheet: some View {
@@ -249,7 +253,7 @@ struct AdminRestaurantListView: View {
             List {
                 Button { adminVM.restaurantCityFilter = nil; showingCityFilter = false } label: {
                     HStack {
-                        Text("Tum Sehirler").foregroundColor(.primary)
+                        Text("Tüm Şehirler").foregroundColor(.primary)
                         Spacer()
                         if adminVM.restaurantCityFilter == nil {
                             Image(systemName: "checkmark").foregroundColor(.orange)
@@ -269,11 +273,11 @@ struct AdminRestaurantListView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Sehir Filtresi")
+            .navigationTitle("Şehir Filtresi")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Iptal") { showingCityFilter = false }
+                    Button("İptal") { showingCityFilter = false }
                 }
             }
         }
@@ -285,7 +289,7 @@ struct AdminRestaurantListView: View {
             List {
                 Button { adminVM.restaurantCuisineFilter = nil; showingCuisineFilter = false } label: {
                     HStack {
-                        Text("Tum Mutfaklar").foregroundColor(.primary)
+                        Text("Tüm Mutfaklar").foregroundColor(.primary)
                         Spacer()
                         if adminVM.restaurantCuisineFilter == nil {
                             Image(systemName: "checkmark").foregroundColor(.orange)
@@ -309,26 +313,104 @@ struct AdminRestaurantListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Iptal") { showingCuisineFilter = false }
+                    Button("İptal") { showingCuisineFilter = false }
                 }
             }
         }
         .if_iOS16_presentationDetents()
     }
 
+    // MARK: - Actions
+
     private func performDelete(_ restaurant: Restaurant) {
         Task {
             do {
                 try await adminVM.performDeleteRestaurant(id: restaurant.id)
-                restaurantToDelete = nil
+                activeRestaurant = nil
             } catch {
-                alertMessage = "Silme hatasi: \(error.localizedDescription)"
-                showingAlert = true
-                restaurantToDelete = nil
+                alertMessage = "Silme hatası: \(error.localizedDescription)"
+                showingAlert  = true
+                activeRestaurant = nil
+            }
+        }
+    }
+
+    private func performToggleActive(_ restaurant: Restaurant) {
+        Task {
+            do {
+                try await adminVM.performToggleRestaurantActive(id: restaurant.id)
+                activeRestaurant = nil
+            } catch {
+                alertMessage = "Güncelleme hatası: \(error.localizedDescription)"
+                showingAlert  = true
+                activeRestaurant = nil
             }
         }
     }
 }
+
+// MARK: - RestaurantRow
+
+struct RestaurantRow: View {
+    let restaurant: Restaurant
+    let onAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // ── Status avatar ─────────────────────────────────────────────────
+            ZStack {
+                Circle()
+                    .fill(restaurant.isActive
+                        ? Color.green.opacity(0.12)
+                        : Color.red.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: restaurant.isActive ? "storefront.fill" : "storefront")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(restaurant.isActive ? .green : .red)
+            }
+
+            // ── Content ───────────────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 3) {
+                Text(restaurant.name)
+                    .font(.subheadline).fontWeight(.semibold).lineLimit(1)
+                Text(restaurant.cuisineType)
+                    .font(.caption).foregroundColor(.secondary)
+                // ── Badges
+                HStack(spacing: 4) {
+                    Text(restaurant.isActive ? "Aktif" : "Pasif")
+                        .font(.caption2).fontWeight(.medium)
+                        .foregroundColor(restaurant.isActive ? .green : .red)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background((restaurant.isActive ? Color.green : Color.red).opacity(0.1))
+                        .clipShape(Capsule())
+                    if let city = restaurant.city, !city.isEmpty {
+                        HStack(spacing: 2) {
+                            Image(systemName: "mappin").font(.caption2)
+                            Text(city).font(.caption2)
+                        }
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.08))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+
+            Spacer()
+
+            // ── Action trigger ────────────────────────────────────────────────
+            Button(action: onAction) {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+// MARK: - AddRestaurantView
 
 struct AddRestaurantView: View {
     @State private var name = ""
