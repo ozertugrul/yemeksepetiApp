@@ -239,7 +239,6 @@ class SQLOrderRepository(OrderRepositoryBase):
     async def get_by_user(self, user_id: str) -> List[OrderORM]:
         result = await self.db.execute(
             select(OrderORM)
-            .options(selectinload(OrderORM.restaurant))
             .where(OrderORM.user_id == user_id)
             .order_by(OrderORM.created_at.desc())
         )
@@ -248,7 +247,6 @@ class SQLOrderRepository(OrderRepositoryBase):
     async def get_by_restaurant(self, restaurant_id: str) -> List[OrderORM]:
         result = await self.db.execute(
             select(OrderORM)
-            .options(selectinload(OrderORM.restaurant))
             .where(OrderORM.restaurant_id == restaurant_id)
             .order_by(OrderORM.created_at.desc())
         )
@@ -256,9 +254,7 @@ class SQLOrderRepository(OrderRepositoryBase):
 
     async def get_by_id(self, order_id: str) -> Optional[OrderORM]:
         result = await self.db.execute(
-            select(OrderORM)
-            .options(selectinload(OrderORM.restaurant))
-            .where(OrderORM.id == order_id)
+            select(OrderORM).where(OrderORM.id == order_id)
         )
         return result.scalar_one_or_none()
 

@@ -7,23 +7,19 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import FirebaseUser, get_current_user, require_role
 from app.core.database import get_db
+from app.models.orm_models import RestaurantORM
 from app.repositories.sql_repos import SQLOrderRepository
 from app.schemas.schemas import OrderCreate, OrderOut, OrderStatusUpdate
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 
-def _orm_to_schema(o) -> OrderOut:
-    restaurant_name = None
-    try:
-        if o.restaurant:
-            restaurant_name = o.restaurant.name
-    except Exception:
-        pass
+def _orm_to_schema(o, restaurant_name: str | None = None) -> OrderOut:
     return OrderOut(
         id=o.id,
         user_id=o.user_id,
@@ -72,7 +68,18 @@ async def my_orders(
 ):
     repo = SQLOrderRepository(db)
     orders = await repo.get_by_user(user.uid)
-    return [_orm_to_schema(o) for o in orders]
+
+    # Restoran adlarını tek sorguda çek (lazy load yok)
+    r_ids = list({o.restaurant_id for o in orders})
+    name_map: dict = {}
+    if r_ids:
+        result = await db.execute(
+            select(RestaurantORM.id, RestaurantORM.name)
+            .where(RestaurantORM.id.in_(r_ids))
+        )
+        name_map = {row[0]: row[1] for row in result.all()}
+
+    return [_orm_to_schema(o, name_map.get(o.restaurant_id)) for o in orders]
 
 
 @router.get("/restaurant/{restaurant_id}", response_model=List[OrderOut])
