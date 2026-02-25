@@ -60,6 +60,32 @@ struct AdminStats: Decodable {
     var todayOrders: Int
 }
 
+// MARK: - AdminRestaurantsPage
+
+private struct APIAdminRestaurantsPage: Decodable {
+    let restaurants: [APIRestaurant]
+    let total: Int
+    let offset: Int
+    let limit: Int
+    let nextOffset: Int?
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case restaurants, total, offset, limit
+        case nextOffset = "next_offset"
+        case hasMore    = "has_more"
+    }
+}
+
+struct AdminRestaurantsPage {
+    let restaurants: [Restaurant]
+    let total: Int
+    let offset: Int
+    let limit: Int
+    let nextOffset: Int?
+    let hasMore: Bool
+}
+
 // MARK: - AdminAPIService
 
 struct AdminAPIService {
@@ -204,6 +230,45 @@ struct AdminAPIService {
     func fetchAllRestaurants() async throws -> [Restaurant] {
         let api = try await client.get([APIRestaurant].self, path: "/admin/restaurants")
         return api.map { $0.toRestaurant() }
+    }
+
+    func fetchRestaurantsPage(
+        offset: Int,
+        limit: Int = 50,
+        search: String? = nil,
+        city: String? = nil,
+        cuisine: String? = nil,
+        isActive: Bool? = nil
+    ) async throws -> AdminRestaurantsPage {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "limit",  value: String(limit)),
+        ]
+        if let v = search,    !v.trimmingCharacters(in: .whitespaces).isEmpty {
+            queryItems.append(URLQueryItem(name: "search",    value: v))
+        }
+        if let v = city,      !v.trimmingCharacters(in: .whitespaces).isEmpty {
+            queryItems.append(URLQueryItem(name: "city",      value: v))
+        }
+        if let v = cuisine,   !v.trimmingCharacters(in: .whitespaces).isEmpty {
+            queryItems.append(URLQueryItem(name: "cuisine",   value: v))
+        }
+        if let v = isActive {
+            queryItems.append(URLQueryItem(name: "is_active", value: v ? "true" : "false"))
+        }
+        let api = try await client.get(
+            APIAdminRestaurantsPage.self,
+            path: "/admin/restaurants/paged",
+            queryItems: queryItems
+        )
+        return AdminRestaurantsPage(
+            restaurants: api.restaurants.map { $0.toRestaurant() },
+            total:       api.total,
+            offset:      api.offset,
+            limit:       api.limit,
+            nextOffset:  api.nextOffset,
+            hasMore:     api.hasMore
+        )
     }
 
     func deleteRestaurant(id: String) async throws {

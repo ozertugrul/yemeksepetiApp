@@ -1,28 +1,24 @@
 import SwiftUI
 
 struct AdminStatsView: View {
-    @ObservedObject var viewModel: AppViewModel
-
-    @State private var stats: AdminStats? = nil
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @ObservedObject var adminVM: AdminViewModel
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                if isLoading {
+                if adminVM.isLoadingStats && adminVM.stats == nil {
                     ProgressView("İstatistikler yükleniyor...")
                         .padding(.top, 60)
-                } else if let msg = errorMessage {
+                } else if let msg = adminVM.statsError, adminVM.stats == nil {
                     VStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 40)).foregroundColor(.orange)
                         Text(msg).font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
-                        Button("Tekrar Dene") { loadStats() }
+                        Button("Tekrar Dene") { adminVM.loadStats(forceRefresh: true) }
                             .buttonStyle(.borderedProminent)
                     }
                     .padding(.top, 60)
-                } else if let s = stats {
+                } else if let s = adminVM.stats {
                     // ── Kullanıcılar ─────────────────────────────────────────
                     SectionHeader(title: "Kullanıcılar")
                     HStack(spacing: 16) {
@@ -50,33 +46,14 @@ struct AdminStatsView: View {
                                  icon: "cart.fill", color: .teal)
                     }
                 } else {
-                    Color.clear.onAppear { loadStats() }
+                    Color.clear.onAppear { adminVM.loadStats() }
                 }
             }
             .padding()
         }
         .navigationTitle("İstatistikler")
-        .onAppear { if stats == nil { loadStats() } }
-        .refreshable { loadStats() }
-    }
-
-    private func loadStats() {
-        isLoading = true
-        errorMessage = nil
-        Task {
-            do {
-                let s = try await viewModel.adminAPI.fetchStats()
-                await MainActor.run {
-                    self.stats = s
-                    self.isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = "İstatistikler alınamadı: \(error.localizedDescription)"
-                    self.isLoading = false
-                }
-            }
-        }
+        .onAppear { adminVM.loadStats() }
+        .refreshable { adminVM.loadStats(forceRefresh: true) }
     }
 }
 

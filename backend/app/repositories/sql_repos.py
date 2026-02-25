@@ -83,6 +83,74 @@ class SQLRestaurantRepository(RestaurantRepositoryBase):
         )
         return result.rowcount > 0
 
+    # ── Sayfalı + Filtrelenmiş (Admin) ────────────────────────────────────────
+
+    async def get_page_filtered(
+        self,
+        offset: int,
+        limit: int,
+        search: Optional[str] = None,
+        city: Optional[str] = None,
+        cuisine: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> List[RestaurantORM]:
+        query = select(RestaurantORM)
+        filters = self._build_restaurant_filters(
+            search=search, city=city, cuisine=cuisine, is_active=is_active
+        )
+        if filters:
+            query = query.where(*filters)
+        query = query.order_by(RestaurantORM.name).offset(offset).limit(limit)
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
+    async def count_page_filtered(
+        self,
+        search: Optional[str] = None,
+        city: Optional[str] = None,
+        cuisine: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> int:
+        query = select(func.count()).select_from(RestaurantORM)
+        filters = self._build_restaurant_filters(
+            search=search, city=city, cuisine=cuisine, is_active=is_active
+        )
+        if filters:
+            query = query.where(*filters)
+        result = await self.db.execute(query)
+        return int(result.scalar_one() or 0)
+
+    @staticmethod
+    def _build_restaurant_filters(
+        search: Optional[str],
+        city: Optional[str],
+        cuisine: Optional[str],
+        is_active: Optional[bool],
+    ) -> list:
+        filters: list = []
+        if is_active is not None:
+            filters.append(RestaurantORM.is_active == is_active)
+        if city:
+            city_text = city.strip()
+            if city_text:
+                filters.append(RestaurantORM.city.ilike(f"%{city_text}%"))
+        if cuisine:
+            cuisine_text = cuisine.strip()
+            if cuisine_text:
+                filters.append(RestaurantORM.cuisine_type.ilike(f"%{cuisine_text}%"))
+        if search:
+            search_text = search.strip()
+            if search_text:
+                like = f"%{search_text}%"
+                filters.append(
+                    or_(
+                        RestaurantORM.name.ilike(like),
+                        RestaurantORM.cuisine_type.ilike(like),
+                        RestaurantORM.city.ilike(like),
+                    )
+                )
+        return filters
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MenuItem + pgvector

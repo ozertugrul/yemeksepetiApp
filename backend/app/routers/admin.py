@@ -294,7 +294,48 @@ async def list_all_restaurants(
     return [_restaurant_schema(r) for r in restaurants]
 
 
-@router.patch("/restaurants/{restaurant_id}/toggle", response_model=RestaurantOut)
+class AdminRestaurantsPage(CamelModel):
+    restaurants: List[RestaurantOut]
+    total: int
+    offset: int
+    limit: int
+    next_offset: Optional[int] = None
+    has_more: bool
+
+
+@router.get("/restaurants/paged", response_model=AdminRestaurantsPage)
+async def list_restaurants_paged(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    cuisine: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _user: FirebaseUser = Depends(require_role("admin")),
+):
+    """Sayfalı + filtrelenmiş restoran listesi (admin)."""
+    repo = SQLRestaurantRepository(db)
+    total = await repo.count_page_filtered(
+        search=search, city=city, cuisine=cuisine, is_active=is_active
+    )
+    rows = await repo.get_page_filtered(
+        offset=offset, limit=limit,
+        search=search, city=city, cuisine=cuisine, is_active=is_active,
+    )
+    items = [_restaurant_schema(r) for r in rows]
+    next_offset = offset + len(items)
+    has_more = next_offset < total
+    return AdminRestaurantsPage(
+        restaurants=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+        next_offset=next_offset if has_more else None,
+        has_more=has_more,
+    )
+
+
 async def toggle_restaurant_active(
     restaurant_id: str,
     db: AsyncSession = Depends(get_db),

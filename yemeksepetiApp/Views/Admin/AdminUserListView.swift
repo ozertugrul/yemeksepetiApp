@@ -3,250 +3,54 @@ import Combine
 
 struct AdminUserListView: View {
     @ObservedObject var viewModel: AppViewModel
-    @State private var searchQuery = ""
-    @State private var debouncedQuery = ""
-    @State private var allUsers: [AppUser] = []
-    @State private var visibleUsers: [AppUser] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    // Filtreler
-    @State private var selectedRoleFilter: UserRole? = nil
-    @State private var selectedCityFilter: String? = nil
-    @State private var showingCityFilter = false
-    // Önbellek sayılar (body içinde hesaplanmaz)
-    @State private var userCount = 0
-    @State private var storeOwnerCount = 0
-    @State private var adminCount = 0
-    @State private var cachedCities: [String] = []
-    @State private var cityCounts: [String: Int] = [:]
-    // Debounce
-    @State private var searchCancellable: AnyCancellable?
-    @State private var searchSubject = PassthroughSubject<String, Never>()
-    @State private var showingRoleSheet = false
+    @ObservedObject var adminVM: AdminViewModel
+
+    // ── UI-only state ────────────────────────────────────────────────────────
+    @State private var showingRoleSheet       = false
     @State private var activeUser: AppUser?
     @State private var showingRestaurantPicker = false
     @State private var availableRestaurants: [Restaurant] = []
-    @State private var isLoadingRestaurants = false
-    @State private var alertTitle = ""
-    @State private var showingAlert = false
-    @State private var showingCreateUser = false
-    @State private var showingQuickAssign = false      // ← Email ile yetki ata
-    @State private var showingDeleteAllConfirm = false // ← Tüm kullanıcıları sil
-    @State private var isDeletingAll = false
-    @State private var showingCoOwnerPicker = false    // ← Ortak sahip ata
-    @State private var isLoadingMore = false
-    @State private var paginationOffset = 0
-    @State private var pageSize = 60
-    @State private var hasMoreUsers = true
-    @State private var totalUsersServer = 0
-    /// Tüm restoranları id → Restaurant haritası (storeOwner badge'i için)
+    @State private var isLoadingRestaurants   = false
+    @State private var alertTitle             = ""
+    @State private var showingAlert           = false
+    @State private var showingCreateUser      = false
+    @State private var showingQuickAssign     = false
+    @State private var showingDeleteAllConfirm = false
+    @State private var isDeletingAll          = false
+    @State private var showingCoOwnerPicker   = false
+    @State private var showingCityFilter      = false
+    /// id → Restaurant map for UserRow's storeOwner badge
     @State private var restaurantMap: [String: Restaurant] = [:]
 
-    private var activeFilterCount: Int {
-        var c = 0
-        if selectedRoleFilter != nil { c += 1 }
-        if selectedCityFilter != nil { c += 1 }
-        return c
-    }
-
-    private var hasServerFilters: Bool {
-        activeFilterCount > 0 || !debouncedQuery.isEmpty
-    }
+    // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
-            // ── Search bar ───────────────────────────────────────────────────
-            HStack(spacing: 8) {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                    TextField("Email veya isim ara...", text: $searchQuery)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .onChange(of: searchQuery) { newValue in
-                            searchSubject.send(newValue)
-                        }
-                    if !searchQuery.isEmpty {
-                        Button { searchQuery = ""; debouncedQuery = "" } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
-                if isLoading { ProgressView().padding(.trailing, 4) }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-
-            // ── Filter chips ────────────────────────────────────────
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    // Rol filtreleri
-                    FilterChip(label: "Tümü", isActive: selectedRoleFilter == nil, color: .gray) {
-                        withAnimation(.easeInOut(duration: 0.2)) { selectedRoleFilter = nil }
-                    }
-                    FilterChip(label: "Kullanıcı", isActive: selectedRoleFilter == .user, color: .blue,
-                               count: userCount) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedRoleFilter = selectedRoleFilter == .user ? nil : .user
-                        }
-                    }
-                    FilterChip(label: "Mağaza Sahibi", isActive: selectedRoleFilter == .storeOwner, color: .orange,
-                               count: storeOwnerCount) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedRoleFilter = selectedRoleFilter == .storeOwner ? nil : .storeOwner
-                        }
-                    }
-                    FilterChip(label: "Yönetici", isActive: selectedRoleFilter == .superAdmin, color: .purple,
-                               count: adminCount) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedRoleFilter = selectedRoleFilter == .superAdmin ? nil : .superAdmin
-                        }
-                    }
-
-                    Divider().frame(height: 24)
-
-                    // Şehir filtresi
-                    FilterChip(
-                        label: selectedCityFilter ?? "Şehir",
-                        isActive: selectedCityFilter != nil,
-                        color: .green,
-                        icon: "mappin.circle.fill"
-                    ) {
-                        showingCityFilter = true
-                    }
-
-                    // Filtreleri temizle
-                    if activeFilterCount > 0 {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedRoleFilter = nil
-                                selectedCityFilter = nil
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-            }
-            .padding(.bottom, 6)
-
+            searchBar
+            filterChipsRow
             Divider()
-
-            if let errorMessage {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                    Text(errorMessage).font(.caption).foregroundColor(.orange)
-                    Spacer()
-                    Button("Tekrar Dene") { loadAllUsers() }.font(.caption).foregroundColor(.blue)
-                }
-                .padding(.horizontal).padding(.vertical, 8)
-                .background(Color.orange.opacity(0.1))
-            }
-
-            if isLoading && allUsers.isEmpty {
-                Spacer()
-                ProgressView("Kullanıcılar yükleniyor...")
-                Spacer()
-            } else if visibleUsers.isEmpty {
-                Spacer()
-                VStack(spacing: 12) {
-                    Image(systemName: hasServerFilters ? "magnifyingglass" : "person.slash")
-                        .font(.system(size: 44)).foregroundColor(.gray)
-                    Text(hasServerFilters ? "Arama sonucu bulunamadı" : "Henüz kullanıcı yok")
-                        .foregroundColor(.secondary)
-                    if !allUsers.isEmpty {
-                        Text("Toplam \(allUsers.count) kullanıcı mevcut")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                }
-                Spacer()
-            } else {
-                List {
-                    ForEach(visibleUsers) { user in
-                        UserRow(
-                            user: user,
-                            restaurant: user.managedRestaurantId.flatMap { restaurantMap[$0] },
-                            onEdit: {
-                                activeUser = user
-                                showingRoleSheet = true
-                            }
-                        )
-                    }
-
-                    if hasMoreUsers {
-                        HStack {
-                            Spacer()
-                            if isLoadingMore {
-                                ProgressView().padding(.vertical, 8)
-                            } else {
-                                Text("Daha fazla yükle")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(.vertical, 8)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if !isLoadingMore {
-                                loadNextUsersPage()
-                            }
-                        }
-                        .onAppear {
-                            loadNextUsersPage()
-                        }
-                    }
-                }
-                .listStyle(.plain)
-            }
+            errorBanner
+            contentArea
         }
-        .navigationTitle(allUsers.isEmpty ? "Kullanıcı Yönetimi" : "Kullanıcılar (\(allUsers.count))")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button {
-                        showingQuickAssign = true
-                    } label: {
-                        Label("Email ile Yetki Ata", systemImage: "person.badge.shield.checkmark")
-                    }
-                    Button {
-                        showingCreateUser = true
-                    } label: {
-                        Label("Yeni Kullanıcı Oluştur", systemImage: "person.badge.plus")
-                    }
-                    Divider()
-                    Button(role: .destructive) {
-                        showingDeleteAllConfirm = true
-                    } label: {
-                        Label("Tüm Kullanıcıları Sil", systemImage: "trash.fill")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
+        .navigationTitle(adminVM.users.isEmpty
+            ? "Kullanıcı Yönetimi"
+            : "Kullanıcılar (\(adminVM.userTotal))")
+        .toolbar { toolbarContent }
         .confirmationDialog(
             activeUser.map { "İşlem: \($0.email)" } ?? "Kullanıcı İşlemleri",
             isPresented: $showingRoleSheet,
             titleVisibility: .visible
         ) {
             if let user = activeUser {
-                Button("Süper Admin Yap") { updateUserRole(uid: user.id, role: .superAdmin) }
-                Button("Mağaza Sahibi Yap") { updateUserRole(uid: user.id, role: .storeOwner) }
+                Button("Süper Admin Yap")   { performUpdateRole(uid: user.id, role: .superAdmin) }
+                Button("Mağaza Sahibi Yap") { performUpdateRole(uid: user.id, role: .storeOwner) }
                 Button("Ortak Sahip Yap") {
-                    // confirmationDialog kapandıktan sonra sheet açılmalı,
-                    // aksi hâlde SwiftUI animation çakışması olur
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         showingCoOwnerPicker = true
                     }
                 }
-                Button("Normal Kullanıcı Yap") { updateUserRole(uid: user.id, role: .user) }
-                Button("Kullanıcıyı Sil", role: .destructive) { deleteUser(uid: user.id) }
+                Button("Normal Kullanıcı Yap") { performUpdateRole(uid: user.id, role: .user) }
+                Button("Kullanıcıyı Sil", role: .destructive) { performDelete(uid: user.id) }
                 Button("İptal", role: .cancel) { activeUser = nil }
             }
         }
@@ -257,308 +61,372 @@ struct AdminUserListView: View {
                 dataService: viewModel.dataService,
                 ownerUid: activeUser?.id ?? ""
             ) { restaurantId in
-                if let user = activeUser {
-                    updateUserToStoreOwner(uid: user.id, restaurantId: restaurantId)
-                }
+                if let user = activeUser { performAssignOwner(uid: user.id, restaurantId: restaurantId) }
                 showingRestaurantPicker = false
             }
         }
-        // ── Yeni kullanıcı oluşturma sayfası ────────────────────────────────
         .sheet(isPresented: $showingCreateUser) {
-            AdminCreateUserSheet(viewModel: viewModel) {
-                loadAllUsers()
-            }
+            AdminCreateUserSheet(viewModel: viewModel) { adminVM.reloadUsers() }
         }
-        // ── Email ile hızlı yetki ata ─────────────────────────────────────────
         .sheet(isPresented: $showingQuickAssign) {
-            AdminQuickRoleAssignSheet(allUsers: allUsers) { uid, role in
-                updateUserRole(uid: uid, role: role)
+            AdminQuickRoleAssignSheet(allUsers: adminVM.users) { uid, role in
+                performUpdateRole(uid: uid, role: role)
             }
         }
-        // ── Ortak sahip ata ───────────────────────────────────────────────────
         .sheet(isPresented: $showingCoOwnerPicker) {
             CoOwnerPickerSheet(
                 restaurants: availableRestaurants,
                 isLoading: isLoadingRestaurants,
                 userEmail: activeUser?.email ?? ""
             ) { restaurantId in
-                if let user = activeUser {
-                    assignCoOwner(uid: user.id, restaurantId: restaurantId)
-                }
+                if let user = activeUser { performAssignCoOwner(uid: user.id, restaurantId: restaurantId) }
                 showingCoOwnerPicker = false
             }
         }
-        // ── Tüm kullanıcıları sil onayı ──────────────────────────────────────
         .confirmationDialog(
             "Tüm Kullanıcıları Sil",
             isPresented: $showingDeleteAllConfirm,
             titleVisibility: .visible
         ) {
-            Button("Evet, Hepsini Sil", role: .destructive) { deleteAllUsers() }
+            Button("Evet, Hepsini Sil", role: .destructive) { performDeleteAll() }
             Button("İptal", role: .cancel) {}
         } message: {
-            Text("Bu işlem geri alınamaz. \(allUsers.count) kullanıcı silinecek.")
+            Text("Bu işlem geri alınamaz. \(adminVM.userTotal) kullanıcı silinecek.")
         }
         .alert(alertTitle, isPresented: $showingAlert) {
             Button("Tamam", role: .cancel) {}
         }
-        .sheet(isPresented: $showingCityFilter) {
-            NavigationView {
-                List {
+        .sheet(isPresented: $showingCityFilter) { cityFilterSheet }
+        .onAppear {
+            if adminVM.users.isEmpty { adminVM.reloadUsers() }
+            loadRestaurantsIfNeeded()
+        }
+        .refreshable { adminVM.reloadUsers() }
+    }
+
+    // MARK: - Search bar
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                TextField("Email veya isim ara...", text: $adminVM.userSearchQuery)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                if !adminVM.userSearchQuery.isEmpty {
                     Button {
-                        selectedCityFilter = nil
-                        showingCityFilter = false
+                        adminVM.userSearchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color(.systemGray6))
+            .cornerRadius(10)
+            if adminVM.isLoadingUsers { ProgressView().padding(.trailing, 4) }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Filter chips
+
+    private var filterChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                let counts = adminVM.userRoleCounts
+                FilterChip(label: "Tümü",
+                           isActive: adminVM.userRoleFilter == nil, color: .gray) {
+                    withAnimation(.easeInOut(duration: 0.2)) { adminVM.userRoleFilter = nil }
+                }
+                FilterChip(label: "Kullanıcı",
+                           isActive: adminVM.userRoleFilter == .user,
+                           color: .blue, count: counts.users) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        adminVM.userRoleFilter = adminVM.userRoleFilter == .user ? nil : .user
+                    }
+                }
+                FilterChip(label: "Mağaza Sahibi",
+                           isActive: adminVM.userRoleFilter == .storeOwner,
+                           color: .orange, count: counts.storeOwners) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        adminVM.userRoleFilter = adminVM.userRoleFilter == .storeOwner ? nil : .storeOwner
+                    }
+                }
+                FilterChip(label: "Yönetici",
+                           isActive: adminVM.userRoleFilter == .superAdmin,
+                           color: .purple, count: counts.admins) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        adminVM.userRoleFilter = adminVM.userRoleFilter == .superAdmin ? nil : .superAdmin
+                    }
+                }
+                Divider().frame(height: 24)
+                FilterChip(
+                    label: adminVM.userCityFilter ?? "Şehir",
+                    isActive: adminVM.userCityFilter != nil,
+                    color: .green, icon: "mappin.circle.fill"
+                ) { showingCityFilter = true }
+                if adminVM.userRoleFilter != nil || adminVM.userCityFilter != nil {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            adminVM.userRoleFilter = nil
+                            adminVM.userCityFilter = nil
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Error banner
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let err = adminVM.userError {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                Text(err).font(.caption).foregroundColor(.orange)
+                Spacer()
+                Button("Tekrar Dene") { adminVM.reloadUsers() }
+                    .font(.caption).foregroundColor(.blue)
+            }
+            .padding(.horizontal).padding(.vertical, 8)
+            .background(Color.orange.opacity(0.1))
+        }
+    }
+
+    // MARK: - Content area
+
+    @ViewBuilder
+    private var contentArea: some View {
+        let hasFilters = adminVM.userRoleFilter != nil
+            || adminVM.userCityFilter != nil
+            || !adminVM.userSearchQuery.isEmpty
+
+        if adminVM.isLoadingUsers && adminVM.users.isEmpty {
+            Spacer()
+            ProgressView("Kullanıcılar yükleniyor...")
+            Spacer()
+        } else if adminVM.users.isEmpty {
+            Spacer()
+            VStack(spacing: 12) {
+                Image(systemName: hasFilters ? "magnifyingglass" : "person.slash")
+                    .font(.system(size: 44)).foregroundColor(.gray)
+                Text(hasFilters ? "Arama sonucu bulunamadı" : "Henüz kullanıcı yok")
+                    .foregroundColor(.secondary)
+                if hasFilters {
+                    Button("Filtreleri Temizle") {
+                        adminVM.userRoleFilter  = nil
+                        adminVM.userCityFilter  = nil
+                        adminVM.userSearchQuery = ""
+                    }
+                    .font(.caption).foregroundColor(.orange)
+                }
+            }
+            Spacer()
+        } else {
+            List {
+                ForEach(adminVM.users) { user in
+                    UserRow(
+                        user: user,
+                        restaurant: user.managedRestaurantId.flatMap { restaurantMap[$0] },
+                        onEdit: { activeUser = user; showingRoleSheet = true }
+                    )
+                }
+                // ── Infinite scroll footer ───────────────────────────────────
+                if adminVM.hasMoreUsers {
+                    HStack {
+                        Spacer()
+                        if adminVM.isLoadingUsers {
+                            ProgressView().padding(.vertical, 8)
+                        } else {
+                            Text("Daha fazla yükle")
+                                .font(.caption).foregroundColor(.secondary).padding(.vertical, 8)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture  { adminVM.loadMoreUsers() }
+                    .onAppear      { adminVM.loadMoreUsers() }
+                }
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+                Button {
+                    showingQuickAssign = true
+                } label: {
+                    Label("Email ile Yetki Ata", systemImage: "person.badge.shield.checkmark")
+                }
+                Button {
+                    showingCreateUser = true
+                } label: {
+                    Label("Yeni Kullanıcı Oluştur", systemImage: "person.badge.plus")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    showingDeleteAllConfirm = true
+                } label: {
+                    Label("Tüm Kullanıcıları Sil", systemImage: "trash.fill")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+        }
+    }
+
+    // MARK: - City filter sheet
+
+    @ViewBuilder
+    private var cityFilterSheet: some View {
+        NavigationView {
+            List {
+                Button {
+                    adminVM.userCityFilter = nil; showingCityFilter = false
+                } label: {
+                    HStack {
+                        Text("Tüm Şehirler").foregroundColor(.primary)
+                        Spacer()
+                        if adminVM.userCityFilter == nil {
+                            Image(systemName: "checkmark").foregroundColor(.orange)
+                        }
+                    }
+                }
+                ForEach(adminVM.userDistinctCities, id: \.self) { city in
+                    Button {
+                        adminVM.userCityFilter = city; showingCityFilter = false
                     } label: {
                         HStack {
-                            Text("Tüm Şehirler").foregroundColor(.primary)
+                            Text(city).foregroundColor(.primary)
                             Spacer()
-                            if selectedCityFilter == nil {
+                            if adminVM.userCityFilter == city {
                                 Image(systemName: "checkmark").foregroundColor(.orange)
                             }
                         }
                     }
-                    ForEach(cachedCities, id: \.self) { city in
-                        Button {
-                            selectedCityFilter = city
-                            showingCityFilter = false
-                        } label: {
-                            HStack {
-                                Text(city).foregroundColor(.primary)
-                                Spacer()
-                                Text("\(cityCounts[city] ?? 0)").font(.caption).foregroundColor(.secondary)
-                                if selectedCityFilter == city {
-                                    Image(systemName: "checkmark").foregroundColor(.orange)
-                                }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .navigationTitle("Şehir Filtresi")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("İptal") { showingCityFilter = false }
-                    }
                 }
             }
-            .if_iOS16_presentationDetents()
-        }
-        .onAppear {
-            if allUsers.isEmpty {
-                let cached = viewModel.loadCachedAdminUsers(maxAge: 600)
-                if !cached.isEmpty {
-                    allUsers = cached
-                    recalculateCachedCounts(for: cached)
-                    visibleUsers = cached
+            .listStyle(.plain)
+            .navigationTitle("Şehir Filtresi")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { showingCityFilter = false }
                 }
-                loadRestaurantsIfNeeded()
-                reloadUsersFromStart()
             }
-            // Debounced arama — 300ms bekler, her tuşta tetiklenmez
-            searchCancellable = searchSubject
-                .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-                .removeDuplicates()
-                .sink { debouncedQuery = $0 }
         }
-        .onDisappear {
-            searchCancellable?.cancel()
-        }
-        .onChange(of: selectedRoleFilter) { _ in reloadUsersFromStart() }
-        .onChange(of: selectedCityFilter) { _ in reloadUsersFromStart() }
-        .onChange(of: debouncedQuery) { _ in reloadUsersFromStart() }
+        .if_iOS16_presentationDetents()
     }
 
-    // MARK: - Data Actions
+    // MARK: - Actions
 
     private func loadRestaurantsIfNeeded() {
-        if !availableRestaurants.isEmpty { return }
-        viewModel.dataService.getAllRestaurantsForAdmin { fetchedRestaurants in
-            restaurantMap = Dictionary(uniqueKeysWithValues:
-                fetchedRestaurants.map { ($0.id, $0) }
-            )
-            availableRestaurants = fetchedRestaurants
+        guard availableRestaurants.isEmpty else { return }
+        isLoadingRestaurants = true
+        viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
+            restaurantMap = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
+            availableRestaurants = restaurants
+            isLoadingRestaurants = false
         }
     }
 
-    private func reloadUsersFromStart() {
-        isLoading = true
-        errorMessage = nil
-        paginationOffset = 0
-        hasMoreUsers = true
-        totalUsersServer = 0
-        loadNextUsersPage(reset: true)
-    }
-
-    private func loadNextUsersPage(reset: Bool = false) {
-        if isLoadingMore { return }
-        if !hasMoreUsers && !reset { return }
-        isLoadingMore = true
-
-        let offset = reset ? 0 : paginationOffset
-        viewModel.fetchUsersPage(
-            offset: offset,
-            limit: pageSize,
-            search: debouncedQuery,
-            role: selectedRoleFilter,
-            city: selectedCityFilter
-        ) { page, error in
-            defer {
-                isLoadingMore = false
-                isLoading = false
-            }
-
-            if let error {
-                errorMessage = error
-                return
-            }
-            guard let page else { return }
-
-            totalUsersServer = page.total
-            paginationOffset = page.nextOffset ?? (offset + page.users.count)
-            hasMoreUsers = page.hasMore
-
-            if reset {
-                allUsers = page.users
-            } else {
-                var map = Dictionary(uniqueKeysWithValues: allUsers.map { ($0.id, $0) })
-                for u in page.users { map[u.id] = u }
-                allUsers = map.values.sorted(by: { $0.email < $1.email })
-            }
-
-            recalculateCachedCounts(for: allUsers)
-            visibleUsers = allUsers
-            if !hasServerFilters {
-                viewModel.saveAdminUsersCache(allUsers)
+    private func performUpdateRole(uid: String, role: UserRole) {
+        Task {
+            do {
+                try await adminVM.performUpdateUserRole(uid: uid, role: role)
+                await MainActor.run {
+                    alertTitle  = "Rol başarıyla güncellendi."
+                    showingAlert = true
+                }
+            } catch {
+                await MainActor.run {
+                    alertTitle  = "Hata: \(error.localizedDescription)"
+                    showingAlert = true
+                }
             }
         }
     }
 
-    private func loadAllUsers() {
-        loadRestaurantsIfNeeded()
-        reloadUsersFromStart()
-    }
-
-    /// Sayıları ve şehirleri bir kez hesapla, body'den çıkar
-    private func recalculateCachedCounts(for users: [AppUser]) {
-        var uCount = 0, soCount = 0, aCount = 0
-        var cityMap: [String: Int] = [:]
-        for u in users {
-            switch u.role {
-            case .user:       uCount += 1
-            case .storeOwner: soCount += 1
-            case .superAdmin: aCount += 1
-            }
-            if let c = u.city, !c.isEmpty {
-                cityMap[c, default: 0] += 1
-            }
-        }
-        userCount = uCount
-        storeOwnerCount = soCount
-        adminCount = aCount
-        cityCounts = cityMap
-        cachedCities = cityMap.keys.sorted()
-    }
-
-    func updateUserRole(uid: String, role: UserRole) {
-        viewModel.updateUserRole(uid: uid, role: role) { error in
-            if let error {
-                alertTitle = "Hata: \(error.localizedDescription)"
-            } else {
-                alertTitle = "Rol başarıyla güncellendi."
-                viewModel.clearAdminUsersCache()
-                loadAllUsers()
-            }
-            showingAlert = true
-        }
-    }
-
-    func fetchRestaurantsForPicker(for user: AppUser) {
-        activeUser = user
-        if !availableRestaurants.isEmpty {
-            // Zaten loadAllUsers sırasında yüklendi — tekrar istek atma
-            showingRestaurantPicker = true
-        } else {
-            isLoadingRestaurants = true
-            showingRestaurantPicker = true
-            viewModel.dataService.getAllRestaurantsForAdmin { restaurants in
-                availableRestaurants = restaurants
-                restaurantMap = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
-                isLoadingRestaurants = false
+    private func performDelete(uid: String) {
+        Task {
+            do {
+                try await adminVM.performDeleteUser(uid: uid)
+                await MainActor.run {
+                    alertTitle  = "Kullanıcı silindi."
+                    showingAlert = true
+                }
+            } catch {
+                await MainActor.run {
+                    alertTitle  = "Silme hatası: \(error.localizedDescription)"
+                    showingAlert = true
+                }
             }
         }
     }
 
-    func updateUserToStoreOwner(uid: String, restaurantId: String) {
+    private func performAssignOwner(uid: String, restaurantId: String) {
         viewModel.dataService.assignStoreOwner(uid: uid, restaurantId: restaurantId) { error in
             if let error {
                 alertTitle = "Hata: \(error.localizedDescription)"
             } else {
                 alertTitle = "Mağaza sahibi başarıyla atandı."
-                viewModel.clearAdminUsersCache()
-                loadAllUsers()
+                adminVM.reloadUsers()
             }
             showingAlert = true
         }
     }
 
-    func assignCoOwner(uid: String, restaurantId: String) {
+    private func performAssignCoOwner(uid: String, restaurantId: String) {
         Task {
             do {
-                _ = try await viewModel.adminAPI.assignManagedRestaurant(uid: uid, restaurantId: restaurantId)
+                try await adminVM.performAssignManagedRestaurant(uid: uid, restaurantId: restaurantId)
                 await MainActor.run {
-                    alertTitle = "Ortak sahip başarıyla atandı."
+                    alertTitle  = "Ortak sahip başarıyla atandı."
                     showingAlert = true
-                    viewModel.clearAdminUsersCache()
-                    loadAllUsers()
                 }
             } catch {
                 await MainActor.run {
-                    alertTitle = "Hata: \(error.localizedDescription)"
+                    alertTitle  = "Hata: \(error.localizedDescription)"
                     showingAlert = true
                 }
             }
         }
     }
 
-    func deleteUser(uid: String) {
-        viewModel.deleteUser(uid: uid) { error in
-            if let error {
-                alertTitle = "Silme hatası: \(error.localizedDescription)"
-            } else {
-                alertTitle = "Kullanıcı silindi."
-                viewModel.clearAdminUsersCache()
-                loadAllUsers()
-            }
-            showingAlert = true
-        }
-    }
-
-    func deleteAllUsers() {
+    private func performDeleteAll() {
         isDeletingAll = true
-        // Mevcut admin kullanıcı kendi hesabını silmesin
         let currentUid = viewModel.authService.currentUser?.id
-        let usersToDelete = allUsers.filter { $0.id != currentUid }
+        let usersToDelete = adminVM.users.filter { $0.id != currentUid }
         let group = DispatchGroup()
-        var errors: [String] = []
+        var errorCount = 0
         for user in usersToDelete {
             group.enter()
             viewModel.deleteUser(uid: user.id) { error in
-                if let error { errors.append(error.localizedDescription) }
+                if error != nil { errorCount += 1 }
                 group.leave()
             }
         }
         group.notify(queue: .main) {
             isDeletingAll = false
-            if errors.isEmpty {
-                alertTitle = "\(usersToDelete.count) kullanıcı silindi."
-            } else {
-                alertTitle = "\(usersToDelete.count - errors.count) silindi, \(errors.count) hata."
-            }
+            let deleted = usersToDelete.count - errorCount
+            alertTitle = errorCount == 0
+                ? "\(deleted) kullanıcı silindi."
+                : "\(deleted) silindi, \(errorCount) hata."
             showingAlert = true
-            viewModel.clearAdminUsersCache()
-            loadAllUsers()
+            adminVM.reloadUsers()
         }
     }
 }
