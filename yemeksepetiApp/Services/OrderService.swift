@@ -101,15 +101,27 @@ final class OrderService: ObservableObject {
     }
 
     func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Error?) -> Void) {
-        if approve { cancelOrder(orderId: orderId, completion: completion) }
-        else { completion(nil) }
+        Task {
+            do {
+                _ = try await orderAPI.decideCancellation(orderId: orderId, approve: approve)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
     }
 
     // MARK: - Cancellation Request
 
     func requestCancellation(orderId: String, reason: String, completion: @escaping (Error?) -> Void) {
-        // Spesifik iptal-talebi endpoint'i yok; owner onayı için siparişi direkt iptal et.
-        cancelOrder(orderId: orderId, completion: completion)
+        Task {
+            do {
+                _ = try await orderAPI.requestCancellation(orderId: orderId, reason: reason)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
     }
 
     // MARK: - Sales Report

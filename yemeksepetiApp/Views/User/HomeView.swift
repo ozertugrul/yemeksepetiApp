@@ -14,6 +14,12 @@ struct HomeView: View {
     @State private var pickerCity = ""
     @State private var manualCity: String = ""
 
+    // ── CF Recommendations ──────────────────────────────────────────────────
+    @State private var cfRecommendations: [CFRecommendationItem] = []
+    @State private var cfLabel: String = ""
+    @State private var cfTimeSegment: String = ""
+    @State private var isLoadingRecs = false
+
     private var selectedCity: String? {
         if let city = selectedAddress?.city, !city.isEmpty { return city }
         if !manualCity.isEmpty { return manualCity }
@@ -37,6 +43,7 @@ struct HomeView: View {
                 restaurantVM.cityFilter = selectedCity
                 restaurantVM.loadIfNeeded()
                 refreshAddresses()
+                loadRecommendations()
             }
             .onReceive(viewModel.authService.$user) { user in
                 guard let uid = user?.id else {
@@ -176,6 +183,13 @@ struct HomeView: View {
     private var restaurantListView: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
+                // ── Saat bazlı CF önerileri ─────────────────────────────────
+                if isLoadingRecs {
+                    recLoadingPlaceholder
+                } else if !cfRecommendations.isEmpty {
+                    recommendationsSection
+                }
+
                 ForEach(Array(restaurantVM.restaurants.enumerated()), id: \.element.id) { index, restaurant in
                     NavigationLink(destination: RestaurantDetailView(restaurant: restaurant, viewModel: viewModel)) {
                         RestaurantCard(restaurant: restaurant)
@@ -202,6 +216,123 @@ struct HomeView: View {
                 .foregroundColor(.orange)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Recommendations Section
+
+    @ViewBuilder
+    private var recommendationsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // ── Başlık ──────────────────────────────────────────────────────
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: timeSegmentIcon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Senin İçin Öneriler")
+                        .font(.system(size: 17, weight: .bold))
+                    if !cfLabel.isEmpty {
+                        Text(cfLabel)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                if cfRecommendations.count > 3 {
+                    Text("Tümü")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(.horizontal, 4)
+
+            // ── Paging Carousel ─────────────────────────────────────────────
+            TabView {
+                ForEach(cfRecommendations) { rec in
+                    RecommendationCard(item: rec, viewModel: viewModel)
+                        .padding(.horizontal, 6)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .frame(height: 210)
+        }
+        .padding(.bottom, 10)
+    }
+
+    private var timeSegmentIcon: String {
+        switch cfTimeSegment {
+        case "breakfast":  return "sunrise.fill"
+        case "lunch":      return "sun.max.fill"
+        case "afternoon":  return "cup.and.saucer.fill"
+        case "dinner":     return "moon.fill"
+        case "late_night": return "moon.stars.fill"
+        default:           return "fork.knife"
+        }
+    }
+
+    // ── Yükleme Placeholder ─────────────────────────────────────────────────
+
+    @ViewBuilder
+    private var recLoadingPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 4) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 140, height: 14)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.10))
+                        .frame(width: 80, height: 10)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.gray.opacity(0.10))
+                .frame(height: 185)
+                .overlay(
+                    ProgressView()
+                        .tint(.orange)
+                )
+        }
+        .padding(.bottom, 10)
+    }
+
+    private func loadRecommendations() {
+        guard !isLoadingRecs else { return }
+        isLoadingRecs = true
+        let recoService = RecommendationService()
+        let city = selectedCity
+
+        Task {
+            do {
+                let response: CFRecommendationResponse
+                if viewModel.authService.isAuthenticated {
+                    response = try await recoService.personalRecommendations(
+                        city: city, topN: 15
+                    )
+                } else {
+                    response = try await recoService.popularNow(city: city, topN: 10)
+                }
+                await MainActor.run {
+                    cfRecommendations = response.items
+                    cfLabel = response.label
+                    cfTimeSegment = response.timeSegment
+                    isLoadingRecs = false
+                }
+            } catch {
+                await MainActor.run { isLoadingRecs = false }
+            }
         }
     }
 
@@ -606,6 +737,196 @@ struct RestaurantCard: View {
                     .font(.system(size: 44))
                     .foregroundColor(.orange.opacity(0.35))
             )
+    }
+}
+
+// MARK: - RecommendationCard
+
+struct RecommendationCard: View {
+    let item: CFRecommendationItem
+    @ObservedObject var viewModel: AppViewModel
+
+    private var menuItem: MenuItem { item.item.toMenuItem() }
+
+    var body: some View {
+        cardContent
+    }
+
+    private var cardContent: some View {
+        ZStack(alignment: .bottomLeading) {
+            // ── Arka plan görseli ───────────────────────────────────────
+            Group {
+                if let urlStr = item.item.imageUrl, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img.resizable().scaledToFill()
+                        case .empty:
+                            shimmerPlaceholder
+                        case .failure:
+                            recImagePlaceholder
+                        @unknown default:
+                            recImagePlaceholder
+                        }
+                    }
+                } else {
+                    recImagePlaceholder
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+
+            // ── Gradient overlay ────────────────────────────────────────
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // ── Alt bilgi alanı ─────────────────────────────────────────
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.item.name)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .shadow(radius: 2)
+
+                    if let rName = item.item.restaurantName {
+                        HStack(spacing: 4) {
+                            Image(systemName: "storefront.fill")
+                                .font(.system(size: 10))
+                            Text(rName)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.white.opacity(0.85))
+                    }
+
+                    // Fiyat
+                    HStack(spacing: 6) {
+                        if item.item.discountPercent > 0 {
+                            Text("₺\(String(format: "%.0f", item.item.price))")
+                                .font(.system(size: 12))
+                                .strikethrough()
+                                .foregroundColor(.white.opacity(0.55))
+                            Text("₺\(String(format: "%.0f", item.item.price * (1 - item.item.discountPercent / 100)))")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.green)
+                        } else {
+                            Text("₺\(String(format: "%.0f", item.item.price))")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // ── Sağ taraf: Eşleşme ve kaynak rozeti ────────────────
+                VStack(alignment: .trailing, spacing: 6) {
+                    // Match yüzdesi
+                    Text("\(Int(item.score * 100))%")
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.orange)
+                        .clipShape(Capsule())
+
+                    // Kaynak etiketi
+                    if item.source.contains("cf") {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 9))
+                            Text("\(item.supporters)")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.ultraThinMaterial.opacity(0.6))
+                        .clipShape(Capsule())
+                    } else if item.source == "popular" {
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 9))
+                            Text("Popüler")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.ultraThinMaterial.opacity(0.6))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(14)
+
+            // ── İndirim rozeti (sol üst) ────────────────────────────────
+            if item.item.discountPercent > 0 {
+                VStack {
+                    HStack {
+                        Text("-%\(Int(item.item.discountPercent))")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                            .padding(10)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 185)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
+    }
+
+    private var shimmerPlaceholder: some View {
+        Color.gray.opacity(0.15)
+            .overlay(
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.2), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+    }
+
+    private var recImagePlaceholder: some View {
+        Color.orange.opacity(0.10)
+            .overlay(
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 34))
+                    .foregroundColor(.orange.opacity(0.35))
+            )
+    }
+}
+
+// Corner radius helper
+private extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+private struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }
 

@@ -73,7 +73,7 @@ class MenuItemORM(Base):
     is_available = Column(Boolean, default=True)
     option_groups = Column(JSONB, default=list)
     suggested_ids = Column(ARRAY(String), default=list)
-    # pgvector: all-MiniLM-L6-v2 → 384 boyut
+    # pgvector: ozertuu/yemeksepeti-MiniLM-L12-v2 → 384 boyut
     embedding = Column(Vector(384), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

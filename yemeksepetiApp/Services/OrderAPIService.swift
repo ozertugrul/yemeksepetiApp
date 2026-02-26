@@ -8,6 +8,8 @@ struct APIOrderOut: Decodable {
     var userId: String
     var restaurantId: String
     var restaurantName: String?
+    var cancelRequested: Bool = false
+    var cancelReason: String = ""
     var status: String
     var paymentMethod: String
     var deliveryAddress: APIDeliveryAddress?
@@ -20,6 +22,36 @@ struct APIOrderOut: Decodable {
     var notes: String?
     var isRated: Bool
     var createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, userId, restaurantId, restaurantName
+        case cancelRequested, cancelReason
+        case status, paymentMethod, deliveryAddress, items
+        case subtotal, deliveryFee, discountAmount, totalAmount
+        case couponCode, notes, isRated, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        userId = try c.decode(String.self, forKey: .userId)
+        restaurantId = try c.decode(String.self, forKey: .restaurantId)
+        restaurantName = try c.decodeIfPresent(String.self, forKey: .restaurantName)
+        cancelRequested = try c.decodeIfPresent(Bool.self, forKey: .cancelRequested) ?? false
+        cancelReason = try c.decodeIfPresent(String.self, forKey: .cancelReason) ?? ""
+        status = try c.decode(String.self, forKey: .status)
+        paymentMethod = try c.decode(String.self, forKey: .paymentMethod)
+        deliveryAddress = try c.decodeIfPresent(APIDeliveryAddress.self, forKey: .deliveryAddress)
+        items = try c.decode([OrderItem].self, forKey: .items)
+        subtotal = try c.decode(Double.self, forKey: .subtotal)
+        deliveryFee = try c.decode(Double.self, forKey: .deliveryFee)
+        discountAmount = try c.decode(Double.self, forKey: .discountAmount)
+        totalAmount = try c.decode(Double.self, forKey: .totalAmount)
+        couponCode = try c.decodeIfPresent(String.self, forKey: .couponCode)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        isRated = try c.decode(Bool.self, forKey: .isRated)
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
 
     /// Backend'den gelen Order'ı iOS modeline dönüştür
     func toOrder(restaurantName fallbackName: String = "") -> Order {
@@ -51,6 +83,8 @@ struct APIOrderOut: Decodable {
             createdAt: createdAt ?? Date(),
             updatedAt: createdAt ?? Date(),
             isReviewed: isRated,
+            cancelRequested: cancelRequested,
+            cancelReason: cancelReason,
             discountAmount: discountAmount
         )
     }
@@ -144,6 +178,9 @@ private struct DeliveryAddressBody: Encodable {
 struct OrderAPIService {
     private let client = APIClient.shared
 
+    private struct CancelRequestBody: Encodable { let reason: String }
+    private struct CancelDecisionBody: Encodable { let approve: Bool }
+
     // ── Sipariş Oluştur ───────────────────────────────────────────────────────
 
     func placeOrder(_ order: Order) async throws -> Order {
@@ -209,6 +246,26 @@ struct OrderAPIService {
             APIOrderOut.self,
             path: "/orders/\(orderId)/status",
             encodable: StatusBody(status: status.rawValue)
+        )
+        return api.toOrder()
+    }
+
+    // ── Cancellation Request Workflow ───────────────────────────────────────
+
+    func requestCancellation(orderId: String, reason: String) async throws -> Order {
+        let api = try await client.post(
+            APIOrderOut.self,
+            path: "/orders/\(orderId)/cancel-request",
+            encodable: CancelRequestBody(reason: reason)
+        )
+        return api.toOrder()
+    }
+
+    func decideCancellation(orderId: String, approve: Bool) async throws -> Order {
+        let api = try await client.post(
+            APIOrderOut.self,
+            path: "/orders/\(orderId)/cancel-request/decision",
+            encodable: CancelDecisionBody(approve: approve)
         )
         return api.toOrder()
     }

@@ -20,10 +20,17 @@ class Settings(BaseSettings):
     use_embeddings: bool = False
 
     # ── Embedding ─────────────────────────────────────────────────
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "ozertuu/yemeksepeti-MiniLM-L12-v2"
     embedding_dim: int = 384
     embedding_batch_size: int = 16
-    embedding_max_seq_length: int = 128
+    embedding_max_seq_length: int = 256
+
+    # ── Collaborative Filtering ───────────────────────────────────
+    cf_lookback_days: int = 90           # kaç günlük sipariş verisini kullan
+    cf_min_similarity: float = 0.05      # minimum cosine benzerlik eşiği
+    cf_max_similar_users: int = 30       # en fazla kaç benzer kullanıcı
+    cf_cache_ttl_minutes: int = 15       # öneri cache TTL (dakika)
+    cf_embedding_alpha: float = 0.3      # 0=sadece CF, 1=sadece embedding, 0.3=blend
 
     # ── API ───────────────────────────────────────────────────────
     api_prefix: str = "/api/v1"

@@ -159,11 +159,21 @@ class OrderStatusUpdate(CamelModel):
     status: str
 
 
+class OrderCancelRequest(CamelModel):
+    reason: str
+
+
+class OrderCancelDecision(CamelModel):
+    approve: bool
+
+
 class OrderOut(CamelModel):
     id: str
     user_id: str
     restaurant_id: str
     restaurant_name: Optional[str] = None
+    cancel_requested: bool = False
+    cancel_reason: str = ""
     status: str
     payment_method: str
     delivery_address: Optional[Any] = None
@@ -194,6 +204,40 @@ class MenuItemRecommendation(CamelModel):
 class RecommendationOut(CamelModel):
     query: str
     results: List[MenuItemRecommendation]
+
+
+# ── CF (Collaborative Filtering) Öneri ────────────────────────────────────────
+
+class CFMenuItemOut(CamelModel):
+    """CF önerisindeki menü öğesi — restoran adı dahil."""
+    id: str
+    restaurant_id: str
+    name: str
+    description: str = ""
+    price: float
+    image_url: Optional[str] = None
+    category: str = "Diğer"
+    discount_percent: float = 0
+    is_available: bool = True
+    option_groups: List[Any] = []
+    suggested_ids: List[str] = []
+    restaurant_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class CFRecommendationItem(CamelModel):
+    """Tek bir CF önerisi."""
+    score: float           # 0-1 arası normalize skor
+    source: str            # "cf" | "popular"
+    supporters: int        # bu ürünü alan benzer kullanıcı sayısı
+    item: CFMenuItemOut
+
+
+class CFRecommendationOut(CamelModel):
+    """CF önerileri endpoint cevabı."""
+    time_segment: str          # "breakfast" | "lunch" | …
+    label: str                 # "Öğle Yemeği" (TR gösterim)
+    items: List[CFRecommendationItem] = []
 
 
 # ── User ──────────────────────────────────────────────────────────────────────

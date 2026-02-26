@@ -1,8 +1,12 @@
 """
-EmbeddingService — all-MiniLM-L6-v2 ile Türkçe destekli metin embedding üretimi.
+EmbeddingService — ozertuu/yemeksepeti-MiniLM-L12-v2 ile Türkçe yemek domain
+embedding üretimi.
 
-Model ilk çağrıda HuggingFace cache'ten yüklenir (~90 MB).
-Sonraki çağrılar in-memory model kullanır.
+Kendi verilerimizle (menü öğeleri, sipariş açıklamaları) fine-tune edilmiş model:
+https://huggingface.co/ozertuu/yemeksepeti-MiniLM-L12-v2
+
+Çıktı: 384-boyutlu normalize vektör.
+Model ilk çağrıda HuggingFace Hub'dan indirilir, sonraki çağrılar in-memory.
 """
 from __future__ import annotations
 
@@ -21,7 +25,13 @@ if TYPE_CHECKING:
 @lru_cache(maxsize=1)
 def _load_model(model_name: str, max_seq_length: int):
     """Model'i bir kez yükle, singleton olarak tut."""
-    from sentence_transformers import SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError:
+        logger.warning(
+            "sentence_transformers paketi kurulu değil. Embedding devre dışı bırakılacak."
+        )
+        return None
 
     logger.info(f"Embedding modeli yükleniyor: {model_name}")
     model = SentenceTransformer(model_name, device="cpu")
@@ -33,6 +43,7 @@ def _load_model(model_name: str, max_seq_length: int):
 class EmbeddingService:
     """
     Menü öğesi ve restoran metinlerinden 384-boyutlu vektör üretir.
+    Model: ozertuu/yemeksepeti-MiniLM-L12-v2 (kendi verilerimizle fine-tuned).
     """
 
     def __init__(self):
@@ -51,10 +62,13 @@ class EmbeddingService:
     # ── Embedding üretimi ─────────────────────────────────────────────────────
 
     def embed_text(self, text: str) -> Optional[List[float]]:
-        """Tek metin → 384-boyutlu float listesi."""
+        """Tek metin → 384-boyutlu float listesi (normalize)."""
         if not self._enabled or not text.strip():
             return None
-        vec = self.model.encode(
+        model = self.model
+        if model is None:
+            return None
+        vec = model.encode(
             [text],
             normalize_embeddings=True,
             convert_to_numpy=True,
@@ -68,7 +82,10 @@ class EmbeddingService:
             return [[] for _ in texts]
         if not texts:
             return []
-        vecs = self.model.encode(
+        model = self.model
+        if model is None:
+            return [[] for _ in texts]
+        vecs = model.encode(
             texts,
             normalize_embeddings=True,
             convert_to_numpy=True,

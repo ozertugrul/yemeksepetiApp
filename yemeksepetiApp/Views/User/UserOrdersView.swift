@@ -95,8 +95,7 @@ struct UserOrdersView: View {
 
     private func startListening() {
         guard let uid = viewModel.authService.currentUser?.id else { isLoading = false; return }
-        // Önbellekte veri varsa spinner gösterme — arka planda yenile
-        if orders.isEmpty { isLoading = true }
+        isLoading = true
         listenerReg?.remove()
         listenerReg = viewModel.orderService.listenUserOrders(userId: uid) { fetched in
             orders = fetched

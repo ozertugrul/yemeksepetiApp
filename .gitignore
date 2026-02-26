@@ -21,19 +21,56 @@ Carthage/Build/
 .AppleDouble
 .LSOverride
 
-# Sensitive / secrets
+# ── Sensitive / secrets ──────────────────────────────────────────────────────
 GoogleService-Info.plist
 **/GoogleService-Info.plist
+client_*.apps.googleusercontent.com.plist
 *.plist.bak
 Secrets.swift
 admin_reset.py
 **/admin_reset.py
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+*.p12
+*.pem
+*.key
 
 # Local environment
 .env
 .env.local
 *.env
 *.env.*
+!*.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg
+*.egg-info/
+dist/
+env/
+venv/
+.venv/
+
+# Model cache (HuggingFace)
+.cache/
+huggingface/
+
+# Logs
+*.log
+
+# ── Training data & datasets (large files) ───────────────────────────────────
+ds/
+ds_refined/
+
+# ── Local one-off scripts (may contain sensitive data) ────────────────────────
+scripts/_*.py
+backend/scripts/_*.py
+backend/scripts/backfill_addresses_and_coupons.py
+backend/scripts/fill_missing_cities.py
+backend/scripts/generate_synthetic_data.py
 
 # Backup files
 *.bak
@@ -44,3 +81,6 @@ admin_reset.py
 
 # Sources mirror (not used in Xcode project)
 Sources/
+
+# Claude rules (internal)
+.claude/

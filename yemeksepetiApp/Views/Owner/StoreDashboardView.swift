@@ -382,15 +382,17 @@ struct MenuManagementView: View {
         }
         .sheet(isPresented: $showingAddItem) {
             AddEditMenuItemView(item: nil) { newItem in
+                let previousMenu = restaurant.menu
                 restaurant.menu.append(newItem)
-                saveMenu()
+                saveMenu(previousMenu: previousMenu)
             }
         }
         .sheet(item: $editingItem) { item in
             AddEditMenuItemView(item: item) { updated in
                 if let idx = restaurant.menu.firstIndex(where: { $0.id == updated.id }) {
+                    let previousMenu = restaurant.menu
                     restaurant.menu[idx] = updated
-                    saveMenu()
+                    saveMenu(previousMenu: previousMenu)
                 }
             }
         }
@@ -399,21 +401,53 @@ struct MenuManagementView: View {
 
     private func toggleAvailability(_ item: MenuItem) {
         if let idx = restaurant.menu.firstIndex(where: { $0.id == item.id }) {
+            let previousMenu = restaurant.menu
             restaurant.menu[idx].isAvailable.toggle()
-            saveMenu()
+            saveMenu(previousMenu: previousMenu)
         }
     }
 
     private func deleteItems(_ offsets: IndexSet, from list: [MenuItem]) {
+        let previousMenu = restaurant.menu
         let idsToDelete = offsets.map { list[$0].id }
         restaurant.menu.removeAll { idsToDelete.contains($0.id) }
-        saveMenu()
+        saveMenu(previousMenu: previousMenu)
     }
 
-    private func saveMenu() {
+    private func saveMenu(previousMenu: [MenuItem]? = nil) {
+        guard !isSaving else { return }
+        isSaving = true
+
         dataService.updateRestaurantMenu(restaurantId: restaurant.id, menu: restaurant.menu) { error in
-            if let error { alertMessage = "Kaydetme hatası: \(error.localizedDescription)"; showingAlert = true }
+            isSaving = false
+            if let error {
+                // Son değişiklikleri geri al (optimistic UI rollback)
+                if let previousMenu {
+                    restaurant.menu = previousMenu
+                }
+                alertMessage = friendlySaveErrorMessage(error)
+                showingAlert = true
+            }
         }
+    }
+
+    private func friendlySaveErrorMessage(_ error: Error) -> String {
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .unauthorized:
+                return "Oturum süreniz dolmuş. Lütfen tekrar giriş yapın."
+            case .forbidden:
+                return "Bu mağaza için ürün ekleme yetkiniz yok."
+            case .serverError(let code, _):
+                if code >= 500 {
+                    return "Sunucu şu anda ürün kaydetme işlemini tamamlayamadı. Lütfen birazdan tekrar deneyin."
+                }
+                return "Ürün kaydedilemedi. Lütfen girdiğiniz alanları kontrol edin."
+            default:
+                return apiError.localizedDescription
+            }
+        }
+        return "Ürün kaydedilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin."
     }
 }
 

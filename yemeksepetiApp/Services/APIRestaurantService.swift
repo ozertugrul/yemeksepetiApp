@@ -18,6 +18,47 @@ struct RecommendationResponse: Decodable {
     var results: [MenuItemRecommendation]
 }
 
+// MARK: - CF (Collaborative Filtering) Recommendation Models
+
+struct CFMenuItemResponse: Decodable {
+    var id: String
+    var restaurantId: String
+    var name: String
+    var description: String
+    var price: Double
+    var imageUrl: String?
+    var category: String
+    var discountPercent: Double
+    var isAvailable: Bool
+    var optionGroups: [MenuItemOptionGroup]?
+    var suggestedIds: [String]?
+    var restaurantName: String?
+
+    func toMenuItem() -> MenuItem {
+        MenuItem(
+            id: id, name: name, description: description,
+            price: price, imageUrl: imageUrl, category: category,
+            discountPercent: discountPercent, isAvailable: isAvailable,
+            optionGroups: optionGroups ?? [], suggestedItemIds: suggestedIds ?? []
+        )
+    }
+}
+
+struct CFRecommendationItem: Decodable, Identifiable {
+    var score: Double
+    var source: String        // "cf" | "popular"
+    var supporters: Int
+    var item: CFMenuItemResponse
+
+    var id: String { item.id }
+}
+
+struct CFRecommendationResponse: Decodable {
+    var timeSegment: String        // "breakfast" | "lunch" | …
+    var label: String              // "Öğle Yemeği" (TR)
+    var items: [CFRecommendationItem]
+}
+
 // ── API dönüş tipleri (FastAPI şeması ile aynı) ───────────────────────────────
 
 struct APIRestaurant: Decodable {
@@ -221,7 +262,7 @@ private struct MenuItemBody: Encodable {
 struct RecommendationService {
     private let client = APIClient.shared
 
-    /// Serbest metin sorgusuna göre menü öğesi önerisi al
+    /// Serbest metin sorgusuna göre menü öğesi önerisi al (embedding-based)
     func recommend(
         query: String,
         restaurantId: String? = nil,
@@ -235,6 +276,49 @@ struct RecommendationService {
             encodable: body
         )
         return response.results
+    }
+
+    /// Kişiselleştirilmiş saat-bazlı collaborative filtering önerileri
+    func personalRecommendations(
+        city: String? = nil,
+        topN: Int = 15,
+        timeSegment: String? = nil
+    ) async throws -> CFRecommendationResponse {
+        guard APIConfig.useRecommendations else {
+            return CFRecommendationResponse(timeSegment: "", label: "", items: [])
+        }
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "top_n", value: "\(topN)")
+        ]
+        if let city, !city.isEmpty {
+            queryItems.append(URLQueryItem(name: "city", value: city))
+        }
+        if let ts = timeSegment, !ts.isEmpty {
+            queryItems.append(URLQueryItem(name: "time_segment", value: ts))
+        }
+        return try await client.get(
+            CFRecommendationResponse.self,
+            path: "/recommendations/personal",
+            queryItems: queryItems
+        )
+    }
+
+    /// Şu anki zaman dilimindeki popüler ürünler (auth opsiyonel)
+    func popularNow(
+        city: String? = nil,
+        topN: Int = 10
+    ) async throws -> CFRecommendationResponse {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "top_n", value: "\(topN)")
+        ]
+        if let city, !city.isEmpty {
+            queryItems.append(URLQueryItem(name: "city", value: city))
+        }
+        return try await client.get(
+            CFRecommendationResponse.self,
+            path: "/recommendations/popular-now",
+            queryItems: queryItems
+        )
     }
 
     /// Belirtilen restoran için tüm menü öğelerinin embedding'ini yenile (owner trigger)

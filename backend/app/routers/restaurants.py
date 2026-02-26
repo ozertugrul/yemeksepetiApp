@@ -303,10 +303,14 @@ async def add_menu_item(
     item = await item_repo.upsert(data)
 
     # Embedding üret (async — non-blocking)
-    text = EmbeddingService.menu_item_text(item.name, item.description or "", item.category or "")
-    vec = embedding_service.embed_text(text)
-    if vec:
-        await item_repo.update_embedding(item.id, vec)
+    try:
+        text = EmbeddingService.menu_item_text(item.name, item.description or "", item.category or "")
+        vec = embedding_service.embed_text(text)
+        if vec:
+            await item_repo.update_embedding(item.id, vec)
+    except Exception:
+        # Embedding yardımcı bir özellik; başarısız olsa da menü ekleme akışı devam etmeli.
+        pass
 
     return _orm_menu_to_schema(item)
 
