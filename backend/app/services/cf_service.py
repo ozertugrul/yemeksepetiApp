@@ -150,7 +150,7 @@ class CollaborativeFilteringService:
         sql = text(f"""
             SELECT
                 o.user_id,
-                item->>'menu_item_id'  AS menu_item_id,
+                COALESCE(item->>'id', item->>'menu_item_id')  AS menu_item_id,
                 COUNT(*)               AS cnt
             FROM orders o,
                  LATERAL jsonb_array_elements(o.items) AS item
@@ -159,7 +159,7 @@ class CollaborativeFilteringService:
               AND EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Istanbul')::int
                   IN ({hour_list})
               {city_filter}
-            GROUP BY o.user_id, item->>'menu_item_id'
+            GROUP BY o.user_id, COALESCE(item->>'id', item->>'menu_item_id')
         """)
 
         result = await self.db.execute(sql, params)
@@ -267,7 +267,7 @@ class CollaborativeFilteringService:
 
         sql = text(f"""
             SELECT
-                item->>'menu_item_id'        AS menu_item_id,
+                COALESCE(item->>'id', item->>'menu_item_id')  AS menu_item_id,
                 COUNT(DISTINCT o.user_id)    AS user_count,
                 COUNT(*)                     AS order_count
             FROM orders o,
@@ -277,7 +277,7 @@ class CollaborativeFilteringService:
               AND EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Istanbul')::int
                   IN ({hour_list})
               {city_filter}
-            GROUP BY item->>'menu_item_id'
+            GROUP BY COALESCE(item->>'id', item->>'menu_item_id')
             ORDER BY user_count DESC, order_count DESC
             LIMIT :lim
         """)
@@ -366,7 +366,7 @@ class CollaborativeFilteringService:
         # Kullanıcının son siparişlerindeki ürünlerin embedding ortalaması
         avg_embedding_sql = text("""
             WITH user_items AS (
-                SELECT DISTINCT item->>'menu_item_id' AS mid
+                SELECT DISTINCT COALESCE(item->>'id', item->>'menu_item_id') AS mid
                 FROM orders o,
                      LATERAL jsonb_array_elements(o.items) AS item
                 WHERE o.user_id = :uid
