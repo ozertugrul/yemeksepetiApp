@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.models import orm_models  # ORM tablolarını kaydet
 from app.routers import admin, orders, recommendations, restaurants, users
+from app.routers import auth_router as auth
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ app.add_middleware(
 # ── Router'lar ────────────────────────────────────────────────────────────────
 PREFIX = settings.api_prefix
 
+app.include_router(auth.router, prefix=PREFIX)
 app.include_router(restaurants.router, prefix=PREFIX)
 app.include_router(orders.router, prefix=PREFIX)
 app.include_router(users.router, prefix=PREFIX)

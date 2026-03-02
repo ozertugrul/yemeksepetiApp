@@ -8,7 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import FirebaseUser, get_current_user, get_firebase_identity
+from app.core.auth import CurrentUser as FirebaseUser, get_current_user, get_identity_only as get_firebase_identity
 from app.core.database import get_db
 from app.repositories.sql_repos import SQLAddressRepository, SQLUserRepository
 from app.schemas.schemas import UserAddressCreate, UserAddressOut, UserOut

@@ -14,7 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy import func as sql_func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import FirebaseUser, _init_firebase_app, require_role
+from app.core.auth import CurrentUser as FirebaseUser, require_role
+from app.core.auth import hash_password as _hash_password
 from app.core.database import get_db
 from app.models.orm_models import OrderORM, RestaurantORM, UserORM
 from app.repositories.sql_repos import SQLRestaurantRepository, SQLUserRepository
@@ -116,33 +117,23 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     _admin: FirebaseUser = Depends(require_role("admin")),
 ):
-    from firebase_admin import auth as firebase_auth
-
-    _init_firebase_app()
-
     if body.role not in ("user", "storeOwner", "admin"):
         raise HTTPException(status_code=422, detail=f"Geçersiz rol: {body.role!r}")
 
-    # Firebase'de kullanıcı oluştur
-    try:
-        fb_user = firebase_auth.create_user(
-            email=body.email,
-            password=body.password,
-            display_name=body.display_name or "",
-            email_verified=False,
-        )
-    except firebase_auth.EmailAlreadyExistsError:
+    # Duplicate e-posta kontrolü
+    dup = await db.execute(sa_select(UserORM.id).where(UserORM.email == body.email))
+    if dup.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Bu e-posta zaten kayıtlı.")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Firebase kullanıcı oluşturulamadı: {e}")
 
-    # PostgreSQL'e kaydet
+    import uuid
+    uid = str(uuid.uuid4())
     repo = SQLUserRepository(db)
     u = await repo.upsert({
-        "id": fb_user.uid,
+        "id": uid,
         "email": body.email,
         "display_name": body.display_name or "",
         "role": body.role,
+        "password_hash": _hash_password(body.password),
     })
     return _user_schema(u)
 
@@ -225,16 +216,7 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
-    # Önce Firebase hesabını sil: aksi halde PostgreSQL'den silinip Firebase'de kalan
-    # kullanıcı /users/me ile tekrar oluşturulabilir.
-    _init_firebase_app()
-    try:
-        from firebase_admin import auth as firebase_auth
-        firebase_auth.delete_user(uid)
-    except firebase_auth.UserNotFoundError:
-        pass
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Firebase kullanıcı silinemedi: {e}")
+    # Firebase yoktu — direkt DB işlemleri:
 
     # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
     # Restoranı sahipsizleştir + pasife al — sadece gerçekten son sahipse.

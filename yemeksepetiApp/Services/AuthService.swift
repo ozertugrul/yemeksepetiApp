@@ -1,8 +1,46 @@
 import Foundation
-import FirebaseAuth
 import Combine
 
-// MARK: - AuthService (FirebaseFirestore fully removed)
+// MARK: - Auth DTOs
+
+private struct LoginRequest: Encodable {
+    let email: String
+    let password: String
+}
+
+private struct RegisterRequest: Encodable {
+    let email: String
+    let password: String
+    let displayName: String?
+}
+
+private struct ChangePasswordRequest: Encodable {
+    let currentPassword: String
+    let newPassword: String
+}
+
+private struct ChangeEmailRequest: Encodable {
+    let currentPassword: String
+    let newEmail: String
+}
+
+private struct TokenResponse: Decodable {
+    let accessToken: String
+    let tokenType: String
+    let userId: String
+    let email: String
+    let role: String
+    let displayName: String?
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType   = "token_type"
+        case userId      = "user_id"
+        case email, role
+        case displayName = "display_name"
+    }
+}
+
+// MARK: - AuthService
 
 class AuthService: ObservableObject {
     @Published var user: AppUser?
@@ -12,47 +50,47 @@ class AuthService: ObservableObject {
     private let userAPI = UserAPIService()
     private var apiUnauthorizedObserver: NSObjectProtocol?
     private var apiForbiddenObserver: NSObjectProtocol?
-    /// register() sırasında addStateDidChangeListener'dan gelen örtüşen
-    /// fetchUserProfileFromAPI çağrısını engeller.
-    private var suppressNextListenerFetch = false
 
     init() {
-        _ = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
-            guard let self else { return }
-            if let firebaseUser {
-                if self.suppressNextListenerFetch {
-                    self.suppressNextListenerFetch = false
-                    return
-                }
-                self.fetchUserProfileFromAPI(uid: firebaseUser.uid)
-            } else {
-                DispatchQueue.main.async { self.user = nil }
-            }
-        }
-
+        restoreSession()
         apiUnauthorizedObserver = NotificationCenter.default.addObserver(
             forName: .apiUnauthorized,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.signOut()
-        }
+        ) { [weak self] _ in self?.signOut() }
 
         apiForbiddenObserver = NotificationCenter.default.addObserver(
             forName: .apiForbidden,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.refreshCurrentUser()
-        }
+        ) { [weak self] _ in self?.refreshCurrentUser() }
     }
 
     deinit {
-        if let observer = apiUnauthorizedObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        if let observer = apiForbiddenObserver {
-            NotificationCenter.default.removeObserver(observer)
+        if let o = apiUnauthorizedObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = apiForbiddenObserver    { NotificationCenter.default.removeObserver(o) }
+    }
+
+    // MARK: - Session Restore
+
+    private func restoreSession() {
+        guard KeychainHelper.loadToken() != nil else { return }
+        Task {
+            do {
+                let profile = try await userAPI.fetchMyProfile()
+                let appUser = AppUser(
+                    id: profile.id ?? "",
+                    email: profile.email ?? "",
+                    role: Self.mapAPIRole(profile.role),
+                    managedRestaurantId: profile.managedRestaurantId,
+                    fullName: profile.displayName,
+                    phone: profile.phone,
+                    city: profile.city
+                )
+                await MainActor.run { self.user = appUser }
+            } catch {
+                KeychainHelper.clearAll()
+            }
         }
     }
 
@@ -60,39 +98,26 @@ class AuthService: ObservableObject {
 
     func signIn(email: String, password: String, completion: @escaping (Result<AppUser, Error>) -> Void) {
         isLoading = true
-        Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
-            guard let self else { return }
-            if let error {
-                DispatchQueue.main.async {
+        Task {
+            do {
+                let tokenResp: TokenResponse = try await APIClient.shared.post(
+                    TokenResponse.self, path: "/auth/login",
+                    encodable: LoginRequest(email: email, password: password))
+                KeychainHelper.saveToken(tokenResp.accessToken)
+                let appUser = AppUser(
+                    id: tokenResp.userId, email: tokenResp.email,
+                    role: Self.mapAPIRole(tokenResp.role), fullName: tokenResp.displayName)
+                await MainActor.run {
+                    self.isLoading = false
+                    self.user = appUser
+                    completion(.success(appUser))
+                }
+                await fetchAndUpdateProfile()
+            } catch {
+                await MainActor.run {
                     self.isLoading = false
                     self.errorMessage = error.localizedDescription
                     completion(.failure(error))
-                }
-                return
-            }
-            guard let firebaseUser = result?.user else {
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    completion(.failure(NSError(domain: "AuthService", code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "Giriş başarısız oldu, lütfen tekrar deneyin."])))
-                }
-                return
-            }
-
-            // Firebase login başarılı — hemen minimal AppUser ile devam et
-            let fallbackUser = AppUser(
-                id: firebaseUser.uid,
-                email: firebaseUser.email ?? email,
-                role: .user
-            )
-
-            // API'den profil çek; başarısız olursa Firebase verileriyle yaşa
-            self.fetchUserProfileFromAPI(uid: firebaseUser.uid) { appUser in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    let resolvedUser = appUser ?? fallbackUser
-                    self.user = resolvedUser
-                    completion(.success(resolvedUser))
                 }
             }
         }
@@ -100,59 +125,30 @@ class AuthService: ObservableObject {
 
     // MARK: - Register
 
-    func register(email: String, password: String, displayName: String, completion: @escaping (Result<AppUser, Error>) -> Void) {
+    func register(email: String, password: String, displayName: String,
+                  completion: @escaping (Result<AppUser, Error>) -> Void) {
         isLoading = true
-        // Listener'dan gelen örtüşen fetch'i engelle — biz kendimiz yöneteceğiz
-        suppressNextListenerFetch = true
-        Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
-            guard let self else { return }
-            if let error {
-                self.suppressNextListenerFetch = false
-                DispatchQueue.main.async {
+        Task {
+            do {
+                let tokenResp: TokenResponse = try await APIClient.shared.post(
+                    TokenResponse.self, path: "/auth/register",
+                    encodable: RegisterRequest(email: email, password: password,
+                                              displayName: displayName.isEmpty ? nil : displayName))
+                KeychainHelper.saveToken(tokenResp.accessToken)
+                let appUser = AppUser(
+                    id: tokenResp.userId, email: tokenResp.email,
+                    role: Self.mapAPIRole(tokenResp.role),
+                    fullName: tokenResp.displayName ?? displayName)
+                await MainActor.run {
+                    self.isLoading = false
+                    self.user = appUser
+                    completion(.success(appUser))
+                }
+            } catch {
+                await MainActor.run {
                     self.isLoading = false
                     self.errorMessage = error.localizedDescription
                     completion(.failure(error))
-                }
-                return
-            }
-            guard let firebaseUser = result?.user else {
-                self.suppressNextListenerFetch = false
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    completion(.failure(NSError(domain: "AuthService", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "Kayıt başarısız oldu, lütfen tekrar deneyin."])))
-                }
-                return
-            }
-
-            // Firebase profil adını set et (fire-and-forget)
-            let changeRequest = firebaseUser.createProfileChangeRequest()
-            changeRequest.displayName = displayName
-            changeRequest.commitChanges(completion: nil)
-
-            // Hemen fallback user — API başarısız olsa bile kayıt tamamlanmış sayılır
-            let fallbackUser = AppUser(
-                id: firebaseUser.uid,
-                email: email,
-                role: .user,
-                fullName: displayName
-            )
-
-            Task {
-                // Tek API çağrısı: GET /users/me hem oluşturur hem döndürür
-                // Ardından displayName'i PUT ile yaz
-                do {
-                    _ = try await self.userAPI.fetchMyProfile()   // PG satırını oluştur
-                    if !displayName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        _ = try? await self.userAPI.updateMyProfile(displayName: displayName)
-                    }
-                } catch {
-                    // Backend geçici kapalıysa sessizce geç — fallback user yeterli
-                }
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    self.user = fallbackUser
-                    completion(.success(fallbackUser))
                 }
             }
         }
@@ -161,58 +157,43 @@ class AuthService: ObservableObject {
     // MARK: - Sign Out
 
     func signOut() {
-        try? Auth.auth().signOut()
+        KeychainHelper.clearAll()
         DispatchQueue.main.async { self.user = nil }
     }
 
-    // MARK: - Fetch Profile from SQL API
+    // MARK: - Profile
 
     func fetchUserProfileFromAPI(uid: String, completion: ((AppUser?) -> Void)? = nil) {
-        // Anonymous users have no backend account — keep the local guest AppUser as-is.
-        if Auth.auth().currentUser?.isAnonymous == true {
-            completion?(self.user)
-            return
-        }
-        Task {
-            do {
-                let profile = try await userAPI.fetchMyProfile()
-                let appUser = AppUser(
-                    id: uid,
-                    email: profile.email ?? "",
-                    role: Self.mapAPIRole(profile.role),
-                    managedRestaurantId: profile.managedRestaurantId,
-                    fullName: profile.displayName,
-                    phone: profile.phone,
-                    city: profile.city
-                )
-                DispatchQueue.main.async {
-                    self.user = appUser
-                    completion?(appUser)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    completion?(nil)
-                }
-            }
+        Task { let r = await fetchAndUpdateProfile(); completion?(r) }
+    }
+
+    @discardableResult
+    private func fetchAndUpdateProfile() async -> AppUser? {
+        do {
+            let profile = try await userAPI.fetchMyProfile()
+            let appUser = AppUser(
+                id: profile.id ?? self.user?.id ?? "",
+                email: profile.email ?? self.user?.email ?? "",
+                role: Self.mapAPIRole(profile.role),
+                managedRestaurantId: profile.managedRestaurantId,
+                fullName: profile.displayName,
+                phone: profile.phone,
+                city: profile.city
+            )
+            await MainActor.run { self.user = appUser }
+            return appUser
+        } catch {
+            await MainActor.run { self.errorMessage = error.localizedDescription }
+            return nil
         }
     }
 
-    // MARK: - Compatibility shims (views still use currentUser / userRole)
+    // MARK: - Compatibility shims
 
-    /// Alias for `user` — keeps all existing view references working.
     var currentUser: AppUser? { user }
-
-    /// Convenience role accessor used by MainView and other views.
     var userRole: UserRole { user?.role ?? .user }
-
-    /// True when a user is signed in.
     var isAuthenticated: Bool { user != nil }
-
-    /// True when signed in anonymously (guest).
-    var isGuest: Bool { Auth.auth().currentUser?.isAnonymous ?? false }
-
-    // MARK: - Role Mapping
+    var isGuest: Bool { false }
 
     static func mapAPIRole(_ raw: String?) -> UserRole {
         switch raw {
@@ -222,85 +203,82 @@ class AuthService: ObservableObject {
         }
     }
 
-    // MARK: - Admin stubs (routed via AppViewModel → AdminAPIService)
+    // MARK: - Admin stubs
 
-    func fetchAllUsers(completion: @escaping ([AppUser]) -> Void) {
-        completion([])
-    }
-
-    func updateUserRole(uid: String, role: UserRole, completion: @escaping (Error?) -> Void) {
-        completion(nil)
-    }
-
-    func deleteUser(uid: String, completion: @escaping (Error?) -> Void) {
-        completion(nil)
-    }
-
-    // MARK: - Firebase Auth helpers
+    func fetchAllUsers(completion: @escaping ([AppUser]) -> Void) { completion([]) }
+    func updateUserRole(uid: String, role: UserRole, completion: @escaping (Error?) -> Void) { completion(nil) }
+    func deleteUser(uid: String, completion: @escaping (Error?) -> Void) { completion(nil) }
 
     func refreshCurrentUser() {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
-        fetchUserProfileFromAPI(uid: uid)
+        guard user != nil else { return }
+        Task { await fetchAndUpdateProfile() }
     }
+
+    // MARK: - Change Email
 
     func updateEmail(newEmail: String, currentPassword: String, completion: @escaping (Error?) -> Void) {
-        guard let firebaseUser = Auth.auth().currentUser,
-              let email = firebaseUser.email else {
-            completion(NSError(domain: "AuthService", code: -10,
-                               userInfo: [NSLocalizedDescriptionKey: "Kullanıcı bulunamadı"]))
-            return
-        }
         Task {
             do {
-                let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-                try await firebaseUser.reauthenticate(with: credential)
-                // TODO: Replace with sendEmailVerification(beforeUpdatingEmail:) for enhanced
-                // security once the UserProfileView UX supports the verification-email flow.
-                try await firebaseUser.updateEmail(to: newEmail)
-                completion(nil)
+                let tokenResp: TokenResponse = try await APIClient.shared.post(
+                    TokenResponse.self, path: "/auth/change-email",
+                    encodable: ChangeEmailRequest(currentPassword: currentPassword, newEmail: newEmail))
+                KeychainHelper.saveToken(tokenResp.accessToken)
+                await MainActor.run {
+                    if let current = self.user {
+                        self.user = AppUser(
+                            id: current.id,
+                            email: tokenResp.email,
+                            role: current.role,
+                            managedRestaurantId: current.managedRestaurantId,
+                            fullName: current.fullName,
+                            phone: current.phone,
+                            city: current.city
+                        )
+                    }
+                    completion(nil)
+                }
             } catch {
-                completion(error)
+                await MainActor.run { completion(error) }
             }
         }
     }
+
+    // MARK: - Change Password
 
     func changePassword(currentPassword: String, newPassword: String, completion: @escaping (Error?) -> Void) {
-        guard let firebaseUser = Auth.auth().currentUser,
-              let email = firebaseUser.email else {
-            completion(NSError(domain: "AuthService", code: -11,
-                               userInfo: [NSLocalizedDescriptionKey: "Kullanıcı bulunamadı"]))
-            return
-        }
         Task {
             do {
-                let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-                try await firebaseUser.reauthenticate(with: credential)
-                try await firebaseUser.updatePassword(to: newPassword)
-                completion(nil)
+                try await APIClient.shared.executeVoid(
+                    method: "POST", path: "/auth/change-password",
+                    body: try JSONEncoder().encode(
+                        ChangePasswordRequest(currentPassword: currentPassword, newPassword: newPassword)))
+                await MainActor.run { completion(nil) }
             } catch {
-                completion(error)
+                await MainActor.run { completion(error) }
             }
         }
     }
+
+    // MARK: - JWT iat → last sign-in
 
     func getLastSignInDate() -> Date? {
-        Auth.auth().currentUser?.metadata.lastSignInDate
+        guard let token = KeychainHelper.loadToken() else { return nil }
+        let parts = token.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var b64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let rem = b64.count % 4
+        if rem > 0 { b64 += String(repeating: "=", count: 4 - rem) }
+        guard let data = Data(base64Encoded: b64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let iat = json["iat"] as? TimeInterval else { return nil }
+        return Date(timeIntervalSince1970: iat)
     }
 
+    // Misafir girişi kaldırıldı
     func signInAnonymously(completion: @escaping (Result<AppUser, Error>) -> Void) {
-        Auth.auth().signInAnonymously { [weak self] result, error in
-            guard let self else { return }
-            if let error { completion(.failure(error)); return }
-            guard let firebaseUser = result?.user else { return }
-            let appUser = AppUser(
-                id: firebaseUser.uid,
-                email: "Misafir",
-                role: .user
-            )
-            DispatchQueue.main.async {
-                self.user = appUser
-                completion(.success(appUser))
-            }
-        }
+        completion(.failure(NSError(domain: "AuthService", code: -99,
+            userInfo: [NSLocalizedDescriptionKey: "Misafir girişi kaldırıldı."])))
     }
 }

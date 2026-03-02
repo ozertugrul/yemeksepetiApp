@@ -7,12 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		99818DFE2F44488D00B5BA65 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 99818DFD2F44488D00B5BA65 /* FirebaseAuth */; };
-		99818E002F44489600B5BA65 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818DFF2F44489600B5BA65 /* FirebaseFirestore */; };
-		99818E022F44489D00B5BA65 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E012F44489D00B5BA65 /* FirebaseCore */; };
-		99818E042F4448BC00B5BA65 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E032F4448BC00B5BA65 /* FirebaseAuth */; };
-		99818E062F4448C100B5BA65 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E052F4448C100B5BA65 /* FirebaseCore */; };
-		99818E082F4448C700B5BA65 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 99818E072F4448C700B5BA65 /* FirebaseFirestore */; };
+
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,9 +56,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				99818DFE2F44488D00B5BA65 /* FirebaseAuth in Frameworks */,
-				99818E022F44489D00B5BA65 /* FirebaseCore in Frameworks */,
-				99818E002F44489600B5BA65 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,9 +63,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				99818E062F4448C100B5BA65 /* FirebaseCore in Frameworks */,
-				99818E042F4448BC00B5BA65 /* FirebaseAuth in Frameworks */,
-				99818E082F4448C700B5BA65 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,9 +124,6 @@
 			);
 			name = yemeksepetiApp;
 			packageProductDependencies = (
-				99818DFD2F44488D00B5BA65 /* FirebaseAuth */,
-				99818DFF2F44489600B5BA65 /* FirebaseFirestore */,
-				99818E012F44489D00B5BA65 /* FirebaseCore */,
 			);
 			productName = yemeksepetiApp;
 			productReference = 99818D232F43AABA00B5BA65 /* yemeksepetiApp.app */;
@@ -161,9 +147,6 @@
 			);
 			name = yemeksepetiAppTests;
 			packageProductDependencies = (
-				99818E032F4448BC00B5BA65 /* FirebaseAuth */,
-				99818E052F4448C100B5BA65 /* FirebaseCore */,
-				99818E072F4448C700B5BA65 /* FirebaseFirestore */,
 			);
 			productName = yemeksepetiAppTests;
 			productReference = 99818D322F43AAC400B5BA65 /* yemeksepetiAppTests.xctest */;
@@ -225,7 +208,6 @@
 			mainGroup = 99818D1A2F43AABA00B5BA65;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 99818D242F43AABA00B5BA65 /* Products */;
@@ -431,17 +413,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupportFiles/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
@@ -475,17 +448,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupportFiles/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
@@ -650,49 +614,7 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.9.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
 
-/* Begin XCSwiftPackageProductDependency section */
-		99818DFD2F44488D00B5BA65 /* FirebaseAuth */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAuth;
-		};
-		99818DFF2F44489600B5BA65 /* FirebaseFirestore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseFirestore;
-		};
-		99818E012F44489D00B5BA65 /* FirebaseCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCore;
-		};
-		99818E032F4448BC00B5BA65 /* FirebaseAuth */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAuth;
-		};
-		99818E052F4448C100B5BA65 /* FirebaseCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCore;
-		};
-		99818E072F4448C700B5BA65 /* FirebaseFirestore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 99818DFB2F44439400B5BA65 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseFirestore;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 99818D1B2F43AABA00B5BA65 /* Project object */;
 }

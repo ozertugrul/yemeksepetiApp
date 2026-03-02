@@ -1,15 +1,15 @@
 import Foundation
-import FirebaseAuth
 
 extension Notification.Name {
     static let apiUnauthorized = Notification.Name("apiUnauthorized")
     static let apiForbidden = Notification.Name("apiForbidden")
 }
 
-// MARK: - APIConfig
+// MARK: - APIConfigEDbw2ed$JV#RhFT
 
 enum APIConfig {
-    static let baseURL = "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
+    //static let baseURL = "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
+    static let baseURL = "http://88.224.106.3:8000/api/v1"
 
     static var useRecommendations: Bool {
         ProcessInfo.processInfo.environment["USE_RECOMMENDATIONS"] != "false"
@@ -57,15 +57,6 @@ actor APIClient {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    // ── Token ─────────────────────────────────────────────────────────────────
-
-    private func idToken() async throws -> String {
-        guard let user = Auth.auth().currentUser else {
-            throw APIError.unauthorized
-        }
-        return try await user.getIDToken()
-    }
-
     // ── Request builder ───────────────────────────────────────────────────────
 
     private func request(
@@ -83,8 +74,7 @@ actor APIClient {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if Auth.auth().currentUser != nil {
-            let token = try await idToken()
+        if let token = KeychainHelper.loadToken() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 

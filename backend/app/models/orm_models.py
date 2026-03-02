@@ -19,8 +19,9 @@ from app.core.database import Base
 class UserORM(Base):
     __tablename__ = "users"
 
-    id = Column(String, primary_key=True)          # Firebase UID
+    id = Column(String, primary_key=True)          # UUID (kendi ürettiğimiz)
     email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=True)  # bcrypt hash — eski kayıtlar NULL olabilir
     display_name = Column(String)
     role = Column(String, nullable=False, default="user")
     city = Column(String)

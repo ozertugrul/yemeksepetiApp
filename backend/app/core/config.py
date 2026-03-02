@@ -8,10 +8,9 @@ class Settings(BaseSettings):
     # ── PostgreSQL (Supabase) ─────────────────────────────────────
     database_url: str  # postgresql+asyncpg://user:pass@host:5432/postgres
 
-    # ── Firebase Admin SDK ────────────────────────────────────────
-    # JSON içeriği (tek satır) ya da dosya yolu
-    firebase_credentials_json: str = ""
-    firebase_project_id: str = ""
+    # ── JWT Auth ──────────────────────────────────────────────────
+    jwt_secret: str = "change-me-in-production-use-a-long-random-string"
+    jwt_expire_days: int = 30
 
     # ── Feature Flags ─────────────────────────────────────────────
     # 0 = Firestore-only (rollback), 1 = SQL read/write aktif

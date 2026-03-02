@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @ObservedObject var viewModel: AppViewModel
+    @Environment(\.dismiss) private var dismiss
 
     @State private var email = ""
     @State private var password = ""
@@ -150,15 +151,7 @@ struct LoginView: View {
     }
 
     private func signInAnonymously() {
-        isLoading = true
-        viewModel.authService.signInAnonymously { result in
-            DispatchQueue.main.async {
-                isLoading = false
-                if case .failure(let error) = result {
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
+        dismiss()
     }
 }
 

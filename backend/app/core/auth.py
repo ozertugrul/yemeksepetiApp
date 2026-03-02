@@ -1,15 +1,14 @@
 """
-Firebase ID Token doğrulama.
-
-iOS tarafı her istekte Authorization: Bearer <idToken> header'ı gönderir.
-fastapi-firebase-auth yerine firebase-admin kullanıyoruz (daha güvenilir).
+JWT tabanlı kimlik doğrulama — Firebase bağımlılığı tamamen kaldırıldı.
+Şifreler bcrypt ile hashlenir. Access token HS256 JWT'dir.
 """
-import json
-from functools import lru_cache
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
+import bcrypt
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -22,94 +21,104 @@ from app.core.database import get_db
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-@lru_cache(maxsize=1)
-def _init_firebase_app() -> firebase_admin.App:
-    """Firebase Admin SDK'yı bir kez başlat (thread-safe, idempotent)."""
-    settings = get_settings()
+# ── Model ──────────────────────────────────────────────────────────────────────
 
-    if settings.firebase_credentials_json:
-        cred_dict = json.loads(settings.firebase_credentials_json)
-        cred = credentials.Certificate(cred_dict)
-    else:
-        # Development: GOOGLE_APPLICATION_CREDENTIALS env var ile
-        cred = credentials.ApplicationDefault()
+class CurrentUser:
+    """Doğrulanmış kullanıcı. Tüm router'larda kullanılır."""
 
-    try:
-        return firebase_admin.get_app()
-    except ValueError:
-        return firebase_admin.initialize_app(cred)
-
-
-class FirebaseUser:
-    def __init__(self, uid: str, email: Optional[str], role: Optional[str] = None):
+    def __init__(self, uid: str, email: Optional[str], role: str = "user"):
         self.uid = uid
         self.email = email
-        self.role = role or "user"
+        self.role = role
 
 
-async def get_firebase_identity(
+# Geriye dönük uyumluluk
+FirebaseUser = CurrentUser
+
+
+# ── Password helpers ───────────────────────────────────────────────────────────
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+# ── JWT helpers ────────────────────────────────────────────────────────────────
+
+def create_access_token(uid: str, email: str, role: str) -> str:
+    settings = get_settings()
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_expire_days)
+    payload = {
+        "sub": uid,
+        "email": email,
+        "role": role,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
+def _decode_token(token: str) -> dict:
+    settings = get_settings()
+    try:
+        return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token süresi dolmuş, lütfen tekrar giriş yapın.",
+        )
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Geçersiz token: {exc}",
+        )
+
+
+# ── FastAPI dependencies ───────────────────────────────────────────────────────
+
+async def get_identity_only(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-) -> FirebaseUser:
-    """
-    Bearer token'ı Firebase ile doğrula ve hesabın gerçekten var olduğunu doğrula.
-    DB rol kontrolü yapmaz; bootstrap endpoint'lerde kullanılabilir.
-    """
-    _init_firebase_app()
-
+) -> CurrentUser:
+    """Sadece token doğrular, DB'ye gitmez. /users/me bootstrap için."""
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header eksik",
         )
+    payload = _decode_token(credentials.credentials)
+    return CurrentUser(
+        uid=payload.get("sub", ""),
+        email=payload.get("email"),
+        role=payload.get("role", "user"),
+    )
 
-    try:
-        decoded = firebase_auth.verify_id_token(credentials.credentials, check_revoked=True)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Geçersiz Firebase token: {exc}",
-        )
-
-    uid = decoded["uid"]
-    email = decoded.get("email")
-
-    try:
-        fb_user = firebase_auth.get_user(uid)
-        if getattr(fb_user, "disabled", False):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Kullanıcı hesabı devre dışı.",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Kullanıcı hesabı bulunamadı veya geçersiz.",
-        )
-
-    return FirebaseUser(uid=uid, email=email)
+# Geriye dönük uyumluluk alias
+get_firebase_identity = get_identity_only
 
 
 async def get_current_user(
-    identity: FirebaseUser = Depends(get_firebase_identity),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
-) -> FirebaseUser:
-    """
-    Bearer token'ı Firebase ile doğrula, ardından rolü PostgreSQL'den oku.
-    Geçersiz/eksik token → 401.
-    """
-    uid = identity.uid
-    email = identity.email
+) -> CurrentUser:
+    """JWT doğrula → rolü DB'den oku."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header eksik",
+        )
+    payload = _decode_token(credentials.credentials)
+    uid: str = payload.get("sub", "")
+    email: Optional[str] = payload.get("email")
 
-    # Rolü her zaman PostgreSQL'den oku — ORM select() kullan:
-    # text()+named-param yaklaşımı asyncpg'de prepared statement üretiyor,
-    # PgBouncer transaction-mode ile çakışıyor → ORM select saha testiyle daha güvenli.
     from app.models.orm_models import UserORM
     try:
-        result = await db.execute(
-            select(UserORM.role).where(UserORM.id == uid)
-        )
+        result = await db.execute(select(UserORM.role).where(UserORM.id == uid))
     except (TimeoutError, SQLAlchemyError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -121,30 +130,25 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Kullanıcı hesabı bulunamadı.",
         )
-    role = row
-
-    return FirebaseUser(uid=uid, email=email, role=role)
+    return CurrentUser(uid=uid, email=email, role=row)
 
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
-) -> Optional[FirebaseUser]:
-    """Public endpoint'ler için — token yoksa None döner, hata fırlatmaz."""
+) -> Optional[CurrentUser]:
+    """Public endpoint'ler için — token yoksa None döner."""
     if not credentials:
         return None
     try:
-        # İlk olarak Firebase token doğrulaması yapılır (FirebaseUser döner),
-        # ardından PostgreSQL rol kontrolü ile get_current_user çağrılır.
-        identity = await get_firebase_identity(credentials)
-        return await get_current_user(identity, db)
-    except Exception:
+        return await get_current_user(credentials, db)
+    except HTTPException:
         return None
 
 
 def require_role(*roles: str):
     """Role-based access control decorator factory."""
-    async def _check(user: FirebaseUser = Depends(get_current_user)) -> FirebaseUser:
+    async def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -152,3 +156,8 @@ def require_role(*roles: str):
             )
         return user
     return _check
+
+
+# no-op — Firebase yoktu
+def _init_firebase_app() -> None:
+    pass
