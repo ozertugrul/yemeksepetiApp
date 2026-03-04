@@ -3,6 +3,7 @@ import Foundation
 extension Notification.Name {
     nonisolated static let apiUnauthorized = Notification.Name("apiUnauthorized")
     nonisolated static let apiForbidden = Notification.Name("apiForbidden")
+    nonisolated static let cartPulseRequested = Notification.Name("cartPulseRequested")
 }
 
 // MARK: - APIConfigEDbw2ed$JV#RhFT

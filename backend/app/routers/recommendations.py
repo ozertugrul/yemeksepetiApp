@@ -9,6 +9,7 @@ Endpoint'ler:
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,6 +33,7 @@ from app.services.embedding_service import EmbeddingService
 
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 embedding_service = EmbeddingService()
+logger = logging.getLogger(__name__)
 
 
 # ── Kişiselleştirilmiş CF önerileri ──────────────────────────────────────────
@@ -64,12 +66,21 @@ async def personal_recommendations(
         embedding_alpha=settings.cf_embedding_alpha if settings.use_embeddings else 0.0,
     )
 
-    result = await cf.recommend(
-        user_id=user.uid,
-        time_segment=time_segment,
-        city=city,
-        top_n=top_n,
-    )
+    try:
+        result = await cf.recommend(
+            user_id=user.uid,
+            time_segment=time_segment,
+            city=city,
+            top_n=top_n,
+        )
+        if not result.get("items"):
+            result = await cf.popular_now(city=city, top_n=top_n)
+    except Exception:
+        logger.exception(
+            "Personal recommendations failed for user=%s; falling back to popular-now",
+            user.uid,
+        )
+        result = await cf.popular_now(city=city, top_n=top_n)
 
     return CFRecommendationOut(
         time_segment=result["time_segment"],

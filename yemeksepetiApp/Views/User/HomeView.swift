@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var viewModel: AppViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var restaurantVM = RestaurantListViewModel(api: RestaurantAPIService())
     @State private var showingAddressPicker = false
     @State private var showingAddAddress = false
@@ -19,6 +20,14 @@ struct HomeView: View {
     @State private var cfLabel: String = ""
     @State private var cfTimeSegment: String = ""
     @State private var isLoadingRecs = false
+    @State private var recErrorMessage: String?
+    @State private var recContextKey: String = ""
+    @State private var recRequestVersion: Int = 0
+    @State private var flyingRec: CFRecommendationItem?
+    @State private var flyOrigin: CGPoint = .zero
+    @State private var flyProgress: CGFloat = 0
+
+    private let recFlySpaceName = "homeRecommendationFlySpace"
 
     private var selectedCity: String? {
         if let city = selectedAddress?.city, !city.isEmpty { return city }
@@ -33,10 +42,15 @@ struct HomeView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                if !needsCityOnboarding { searchHeader }
-                contentArea
+            ZStack {
+                VStack(spacing: 0) {
+                    if !needsCityOnboarding { searchHeader }
+                    contentArea
+                }
+
+                flyToCartOverlay
             }
+            .coordinateSpace(name: recFlySpaceName)
             .animation(AppMotion.standard, value: needsCityOnboarding)
             .animation(AppMotion.standard, value: restaurantVM.isLoading)
             .animation(AppMotion.spring, value: restaurantVM.restaurants.count)
@@ -46,13 +60,17 @@ struct HomeView: View {
                 restaurantVM.cityFilter = selectedCity
                 restaurantVM.loadIfNeeded()
                 refreshAddresses()
-                loadRecommendations()
+                loadRecommendations(force: true)
             }
             .onReceive(viewModel.authService.$user) { user in
                 guard let uid = user?.id else {
-                    savedAddresses = []; selectedAddress = nil; return
+                    savedAddresses = []
+                    selectedAddress = nil
+                    loadRecommendations(force: true)
+                    return
                 }
                 refreshAddresses(uid: uid)
+                loadRecommendations(force: true)
             }
             .sheet(isPresented: $showingAddressPicker) {
                 AddressPickerSheet(
@@ -69,12 +87,17 @@ struct HomeView: View {
             .onChange(of: selectedAddress?.id) { newId in
                 if let newId { viewModel.selectedAddressId = newId }
                 restaurantVM.cityFilter = selectedCity
+                loadRecommendations(force: true)
             }
             .onChange(of: viewModel.selectedAddressId) { newId in
                 guard let newId, newId != selectedAddress?.id else { return }
                 if let match = savedAddresses.first(where: { $0.id == newId }) {
                     selectedAddress = match
                 }
+            }
+            .onChange(of: manualCity) { _ in
+                restaurantVM.cityFilter = selectedCity
+                loadRecommendations(force: true)
             }
             .sheet(isPresented: $showingAddAddress, onDismiss: { refreshAddresses() }) {
                 AddAddressView(viewModel: viewModel)
@@ -200,6 +223,8 @@ struct HomeView: View {
                 // ── Saat bazlı CF önerileri ─────────────────────────────────
                 if isLoadingRecs {
                     recLoadingPlaceholder
+                } else if let recErrorMessage, !recErrorMessage.isEmpty {
+                    recErrorView(message: recErrorMessage)
                 } else if !cfRecommendations.isEmpty {
                     recommendationsSection
                 }
@@ -216,7 +241,10 @@ struct HomeView: View {
             }
             .padding()
         }
-        .refreshable { restaurantVM.reloadRestaurants() }
+        .refreshable {
+            restaurantVM.reloadRestaurants()
+            loadRecommendations(force: true)
+        }
     }
 
     @ViewBuilder
@@ -271,7 +299,14 @@ struct HomeView: View {
             // ── Paging Carousel ─────────────────────────────────────────────
             TabView {
                 ForEach(cfRecommendations) { rec in
-                    RecommendationCard(item: rec, viewModel: viewModel)
+                    RecommendationCard(
+                        item: rec,
+                        viewModel: viewModel,
+                        coordinateSpaceName: recFlySpaceName,
+                        onAddedToCart: { sourcePoint in
+                            triggerRecommendationFlight(from: sourcePoint, item: rec)
+                        }
+                    )
                         .padding(.horizontal, 6)
                 }
             }
@@ -324,31 +359,165 @@ struct HomeView: View {
         .padding(.bottom, 10)
     }
 
-    private func loadRecommendations() {
-        guard !isLoadingRecs else { return }
+    @ViewBuilder
+    private func recErrorView(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Öneriler yüklenemedi")
+                    .font(.headline)
+                Spacer()
+                Button("Tekrar Dene") {
+                    loadRecommendations(force: true)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.orange)
+                .buttonStyle(PressScaleButtonStyle())
+            }
+
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .cornerRadius(14)
+        .padding(.bottom, 10)
+    }
+
+    private func loadRecommendations(force: Bool = false) {
+        let context = "\(viewModel.authService.currentUser?.id ?? "guest")|\(selectedCity ?? "*")|\(viewModel.authService.isAuthenticated)"
+        if !force, context == recContextKey, !cfRecommendations.isEmpty {
+            return
+        }
+
+        recContextKey = context
+        recRequestVersion += 1
+        let requestVersion = recRequestVersion
+
         isLoadingRecs = true
+        recErrorMessage = nil
         let recoService = RecommendationService()
         let city = selectedCity
+        let isAuthenticated = viewModel.authService.isAuthenticated
 
         Task {
             do {
-                let response: CFRecommendationResponse
-                if viewModel.authService.isAuthenticated {
-                    response = try await recoService.personalRecommendations(
-                        city: city, topN: 15
-                    )
+                var response: CFRecommendationResponse
+                if isAuthenticated {
+                    do {
+                        response = try await recoService.personalRecommendations(city: city, topN: 15)
+                        if response.items.isEmpty {
+                            response = try await recoService.popularNow(city: city, topN: 10)
+                        }
+                    } catch {
+                        response = try await recoService.popularNow(city: city, topN: 10)
+                    }
                 } else {
                     response = try await recoService.popularNow(city: city, topN: 10)
                 }
+
                 await MainActor.run {
+                    guard requestVersion == recRequestVersion else { return }
                     cfRecommendations = response.items
                     cfLabel = response.label
                     cfTimeSegment = response.timeSegment
+                    recErrorMessage = nil
                     isLoadingRecs = false
                 }
             } catch {
-                await MainActor.run { isLoadingRecs = false }
+                await MainActor.run {
+                    guard requestVersion == recRequestVersion else { return }
+                    cfRecommendations = []
+                    cfLabel = ""
+                    cfTimeSegment = ""
+                    recErrorMessage = error.localizedDescription
+                    isLoadingRecs = false
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var flyToCartOverlay: some View {
+        GeometryReader { proxy in
+            if let rec = flyingRec {
+                let destination = cartTargetPoint(in: proxy)
+                let tokenPoint = flyTokenPoint(from: flyOrigin, to: destination, progress: flyProgress)
+                recommendationFlyToken(for: rec)
+                    .position(tokenPoint)
+                    .scaleEffect(CGFloat(1.0) - (CGFloat(0.25) * flyProgress))
+                    .opacity(Double(CGFloat(1.0) - (CGFloat(0.40) * flyProgress)))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    @ViewBuilder
+    private func recommendationFlyToken(for rec: CFRecommendationItem) -> some View {
+        Group {
+            if let imageUrl = rec.item.imageUrl,
+               let url = URL(string: imageUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.orange)
+                    }
+                }
+            } else {
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.orange)
+            }
+        }
+        .frame(width: 46, height: 46)
+        .clipShape(Circle())
+        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
+        .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
+    }
+
+    private func cartTargetPoint(in proxy: GeometryProxy) -> CGPoint {
+        CGPoint(x: proxy.size.width * 0.5, y: proxy.size.height + 25)
+    }
+
+    private func flyTokenPoint(from start: CGPoint, to end: CGPoint, progress: CGFloat) -> CGPoint {
+        let t = max(0, min(progress, 1))
+        let x = start.x + (end.x - start.x) * t
+        let linearY = start.y + (end.y - start.y) * t
+        let arc = sin(Double.pi * Double(t)) * max(56, Double(abs(end.y - start.y)) * 0.20)
+        return CGPoint(x: x, y: linearY - CGFloat(arc))
+    }
+
+    private func triggerRecommendationFlight(from sourcePoint: CGPoint, item: CFRecommendationItem) {
+        flyingRec = item
+        flyOrigin = sourcePoint
+        flyProgress = 0
+
+        let animation: Animation = reduceMotion
+            ? .easeOut(duration: 0.20)
+            : .interactiveSpring(response: 0.55, dampingFraction: 0.86)
+
+        withAnimation(animation) {
+            flyProgress = 1
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 0.22 : 0.62)) {
+            flyingRec = nil
+            flyProgress = 0
         }
     }
 
@@ -759,11 +928,98 @@ struct RestaurantCard: View {
 struct RecommendationCard: View {
     let item: CFRecommendationItem
     @ObservedObject var viewModel: AppViewModel
+    let coordinateSpaceName: String
+    let onAddedToCart: (CGPoint) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var menuItem: MenuItem { item.item.toMenuItem() }
+    private let restaurantAPI = RestaurantAPIService()
+
+    @State private var isResolving = false
+    @State private var selectedOptionItem: MenuItem?
+    @State private var selectedRestaurant: Restaurant?
+    @State private var showingDifferentRestaurantAlert = false
+    @State private var pendingAdd: MenuItem?
+    @State private var addErrorMessage: String?
+    @State private var fallProgress: CGFloat = 0
+    @State private var showAddedBadge = false
+    @State private var cardFrameInSpace: CGRect = .zero
 
     var body: some View {
-        cardContent
+        Button {
+            onCardTapped()
+        } label: {
+            cardContent
+                .scaleEffect(CGFloat(1.0) - (CGFloat(0.10) * fallProgress))
+                .offset(y: CGFloat(110.0) * fallProgress)
+                .opacity(Double(CGFloat(1.0) - (CGFloat(0.38) * fallProgress)))
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: RecommendationCardFramePreferenceKey.self,
+                                value: proxy.frame(in: .named(coordinateSpaceName))
+                            )
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if isResolving {
+                        ProgressView()
+                            .padding(10)
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if showAddedBadge {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Sepete eklendi")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+        }
+            .onPreferenceChange(RecommendationCardFramePreferenceKey.self) { newFrame in
+                guard newFrame.width > 0, newFrame.height > 0 else { return }
+                cardFrameInSpace = newFrame
+            }
+        .buttonStyle(.plain)
+        .disabled(isResolving)
+        .sheet(item: $selectedOptionItem) { optionItem in
+            ItemOptionSheet(
+                item: optionItem,
+                restaurant: selectedRestaurant ?? fallbackRestaurant(with: optionItem),
+                cart: viewModel.cart,
+                onAdded: {
+                    playAddToCartFeedback()
+                }
+            )
+        }
+        .alert("Farklı Mağaza", isPresented: $showingDifferentRestaurantAlert) {
+            Button("Sepeti Temizle ve Ekle", role: .destructive) {
+                viewModel.cart.clear()
+                if let pending = pendingAdd {
+                    Task { await resolveAndAdd(item: pending) }
+                }
+            }
+            Button("İptal", role: .cancel) {
+                pendingAdd = nil
+            }
+        } message: {
+            Text("Sepetinizde başka bir mağazadan ürün var. Devam ederseniz mevcut sepet temizlenecek.")
+        }
+        .alert("Hata", isPresented: .constant(addErrorMessage != nil)) {
+            Button("Tamam") { addErrorMessage = nil }
+        } message: {
+            Text(addErrorMessage ?? "")
+        }
     }
 
     private var cardContent: some View {
@@ -921,6 +1177,152 @@ struct RecommendationCard: View {
                     .foregroundColor(.orange.opacity(0.35))
             )
     }
+
+    private func onCardTapped() {
+        let cart = viewModel.cart
+        let targetRestaurantId = item.item.restaurantId
+
+        if let currentRestaurantId = cart.restaurantId,
+           currentRestaurantId != targetRestaurantId {
+            pendingAdd = menuItem
+            showingDifferentRestaurantAlert = true
+            return
+        }
+
+        Task {
+            await resolveAndAdd(item: menuItem)
+        }
+    }
+
+    private func resolveAndAdd(item: MenuItem) async {
+        await MainActor.run {
+            isResolving = true
+            addErrorMessage = nil
+        }
+
+        defer {
+            Task { @MainActor in
+                isResolving = false
+            }
+        }
+
+        do {
+            let restaurant = try await restaurantAPI.fetchDetail(id: self.item.item.restaurantId)
+            let actualItem = restaurant.menu.first(where: { $0.id == item.id }) ?? item
+
+            await MainActor.run {
+                selectedRestaurant = restaurant
+                if actualItem.optionGroups.isEmpty {
+                    viewModel.cart.addItem(
+                        actualItem,
+                        quantity: 1,
+                        restaurantId: restaurant.id,
+                        restaurantName: restaurant.name,
+                        restaurant: restaurant
+                    )
+                    playAddToCartFeedback()
+                } else {
+                    selectedOptionItem = actualItem
+                }
+            }
+        } catch {
+            let fallback = fallbackRestaurant(with: item)
+            await MainActor.run {
+                selectedRestaurant = fallback
+                if item.optionGroups.isEmpty {
+                    viewModel.cart.addItem(
+                        item,
+                        quantity: 1,
+                        restaurantId: fallback.id,
+                        restaurantName: fallback.name,
+                        restaurant: fallback
+                    )
+                    playAddToCartFeedback()
+                } else {
+                    selectedOptionItem = item
+                }
+            }
+        }
+    }
+
+    private func playAddToCartFeedback() {
+        onAddedToCart(sourcePointForFlight())
+
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                showAddedBadge = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showAddedBadge = false
+                }
+            }
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.14)) {
+            showAddedBadge = true
+        }
+
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.84)) {
+            fallProgress = 0.08
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            withAnimation(.easeInOut(duration: 0.24)) {
+                fallProgress = 0
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showAddedBadge = false
+            }
+        }
+    }
+
+    private func sourcePointForFlight() -> CGPoint {
+        let screen = UIScreen.main.bounds
+        let fallback = CGPoint(x: screen.midX, y: screen.midY * 0.72)
+
+        guard !cardFrameInSpace.isEmpty else {
+            return fallback
+        }
+
+        let rawX = cardFrameInSpace.midX
+        let rawY = cardFrameInSpace.midY
+
+        let isVisibleX = rawX >= 0 && rawX <= screen.width
+        let isVisibleY = rawY >= 0 && rawY <= screen.height
+
+        guard isVisibleX, isVisibleY else {
+            return fallback
+        }
+
+        return CGPoint(
+            x: rawX,
+            y: min(max(rawY, 100), screen.height - 140)
+        )
+    }
+
+    private func fallbackRestaurant(with item: MenuItem) -> Restaurant {
+        Restaurant(
+            id: self.item.item.restaurantId,
+            name: self.item.item.restaurantName ?? "Restoran",
+            ownerId: nil,
+            description: "",
+            cuisineType: "",
+            imageUrl: nil,
+            rating: 0,
+            deliveryTime: "30-45 dk",
+            minOrderAmount: 0,
+            menu: [item],
+            isActive: true
+        )
+    }
 }
 
 // Corner radius helper
@@ -941,6 +1343,17 @@ private struct RoundedCorner: Shape {
             cornerRadii: CGSize(width: radius, height: radius)
         )
         return Path(path.cgPath)
+    }
+}
+
+private struct RecommendationCardFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 {
+            value = next
+        }
     }
 }
 
