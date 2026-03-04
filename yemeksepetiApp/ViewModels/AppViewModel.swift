@@ -9,6 +9,7 @@ class AppViewModel: ObservableObject {
     let orderService   = OrderService()
     let couponService  = CouponService()
     @Published var selectedTab: Int = 0
+    @Published var globalSearchQuery: String = ""
     /// Shared selected address ID — keeps checkout ↔ home in sync
     @Published var selectedAddressId: String?
 

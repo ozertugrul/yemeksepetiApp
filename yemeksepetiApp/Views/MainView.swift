@@ -7,36 +7,43 @@ struct MainView: View {
     private var isAuth: Bool { appViewModel.authService.isAuthenticated }
 
     var body: some View {
-        // Store owners and admins only see their own dashboard — no customer UI
-        if isAuth && (role == .storeOwner || role == .superAdmin) {
-            NavigationView {
-                if role == .superAdmin {
-                    AdminDashboardView(viewModel: appViewModel)
-                } else {
-                    StoreDashboardView(viewModel: appViewModel)
+        Group {
+            // Store owners and admins only see their own dashboard — no customer UI
+            if isAuth && (role == .storeOwner || role == .superAdmin) {
+                NavigationView {
+                    if role == .superAdmin {
+                        AdminDashboardView(viewModel: appViewModel)
+                    } else {
+                        StoreDashboardView(viewModel: appViewModel)
+                    }
                 }
-            }
-            .tint(.orange)
-        } else {
-            // Customer / unauthenticated: full tab bar
-            TabView(selection: $appViewModel.selectedTab) {
-                // Tab 0: Home
-                HomeView(viewModel: appViewModel)
-                    .tabItem { Label("Ana Sayfa", systemImage: "house.fill") }
-                    .tag(0)
+                .tint(.orange)
+                .subtleCardTransition()
+            } else {
+                // Customer / unauthenticated: full tab bar
+                TabView(selection: $appViewModel.selectedTab) {
+                    // Tab 0: Home
+                    HomeView(viewModel: appViewModel)
+                        .tabItem { Label("Ana Sayfa", systemImage: "house.fill") }
+                        .tag(0)
 
-                // Tab 1: Cart
+                // Tab 1: Search
+                SearchView(viewModel: appViewModel)
+                    .tabItem { Label("Ara", systemImage: "magnifyingglass") }
+                    .tag(1)
+
+                // Tab 2: Cart
                 CartView(cart: appViewModel.cart, viewModel: appViewModel)
                     .tabItem { Label("Sepet", systemImage: "cart.fill") }
-                    .tag(1)
+                    .tag(2)
                     .badge(appViewModel.cart.itemCount > 0 ? "\(appViewModel.cart.itemCount)" : nil)
 
-                // Tab 2: Kuponlarım
+                // Tab 3: Kuponlarım
                 UserCouponsView(viewModel: appViewModel)
                     .tabItem { Label("Kuponlarım", systemImage: "ticket.fill") }
-                    .tag(2)
+                    .tag(3)
 
-                // Tab 3: Profile / Login
+                // Tab 4: Profile / Login
                 NavigationView {
                     if isAuth && !appViewModel.authService.isGuest {
                         UserProfileView(viewModel: appViewModel)
@@ -44,13 +51,18 @@ struct MainView: View {
                         GuestLoginScreen(viewModel: appViewModel, context: .profile)
                     }
                 }
-                .tabItem {
-                    Label(isAuth && !appViewModel.authService.isGuest ? "Hesabım" : "Giriş Yap", systemImage: "person.circle.fill")
+                    .tabItem {
+                        Label(isAuth && !appViewModel.authService.isGuest ? "Hesabım" : "Giriş Yap", systemImage: "person.circle.fill")
+                    }
+                    .tag(4)
                 }
-                .tag(3)
+                .tint(.orange)
+                .animation(AppMotion.quick, value: appViewModel.selectedTab)
+                .subtleCardTransition()
             }
-            .tint(.orange)
         }
+        .animation(AppMotion.standard, value: isAuth)
+        .animation(AppMotion.standard, value: role)
     }
 }
 

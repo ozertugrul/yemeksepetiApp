@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import FirebaseUser, get_current_user, get_optional_user
+from app.core.auth import AuthenticatedUser, get_current_user, get_optional_user
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.repositories.sql_repos import SQLMenuItemRepository
@@ -46,7 +46,7 @@ async def personal_recommendations(
                     "Boş bırakılırsa otomatik hesaplanır.",
     ),
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
     Giriş yapmış kullanıcı için saat-bazlı collaborative filtering önerileri.
@@ -93,7 +93,7 @@ async def popular_now(
     city: Optional[str] = Query(None, description="Şehir filtresi"),
     top_n: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser | None = Depends(get_optional_user),
+    _user: AuthenticatedUser | None = Depends(get_optional_user),
 ):
     """
     Şu anki zaman diliminde en çok sipariş edilen ürünler.
@@ -128,7 +128,7 @@ async def popular_now(
 async def recommend_menu_items(
     body: RecommendationQuery,
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser | None = Depends(get_optional_user),
+    _user: AuthenticatedUser | None = Depends(get_optional_user),
 ):
     """
     Serbest metin sorgusunu embed et, pgvector ile en yakın menü öğelerini bul.

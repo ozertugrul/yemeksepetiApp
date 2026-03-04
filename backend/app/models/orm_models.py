@@ -19,9 +19,9 @@ from app.core.database import Base
 class UserORM(Base):
     __tablename__ = "users"
 
-    id = Column(String, primary_key=True)          # UUID (kendi ürettiğimiz)
+    id = Column(String, primary_key=True)
     email = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=True)  # bcrypt hash — eski kayıtlar NULL olabilir
+    password_hash = Column(String)
     display_name = Column(String)
     role = Column(String, nullable=False, default="user")
     city = Column(String)
@@ -58,6 +58,7 @@ class RestaurantORM(Base):
 
     menu_items = relationship("MenuItemORM", back_populates="restaurant", cascade="all, delete-orphan")
     orders = relationship("OrderORM", back_populates="restaurant")
+    reviews = relationship("OrderReviewORM", back_populates="restaurant", cascade="all, delete-orphan")
 
 
 class MenuItemORM(Base):
@@ -126,6 +127,7 @@ class OrderORM(Base):
 
     user = relationship("UserORM", back_populates="orders")
     restaurant = relationship("RestaurantORM", back_populates="orders")
+    review = relationship("OrderReviewORM", back_populates="order", uselist=False, cascade="all, delete-orphan")
 
 
 class CouponORM(Base):
@@ -140,4 +142,27 @@ class CouponORM(Base):
     minimum_order_amount = Column(Double, default=0)
     expiry_date = Column(DateTime(timezone=True), nullable=False)
     is_active = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)
+    city = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OrderReviewORM(Base):
+    __tablename__ = "order_reviews"
+
+    id = Column(String, primary_key=True)
+    order_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, unique=True)
+    restaurant_id = Column(String, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    speed_rating = Column(Double, nullable=False)
+    taste_rating = Column(Double, nullable=False)
+    presentation_rating = Column(Double, nullable=False)
+    average_rating = Column(Double, nullable=False)
+    comment = Column(Text)
+    owner_reply = Column(Text)
+    owner_replied_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    order = relationship("OrderORM", back_populates="review")
+    restaurant = relationship("RestaurantORM", back_populates="reviews")

@@ -142,10 +142,13 @@ struct OrderReview: Identifiable, Codable {
     var orderId: String
     var restaurantId: String
     var userId: String
+    var userDisplayName: String? = nil
     var speedRating: Double = 0       // 1-5
     var tasteRating: Double = 0       // 1-5
     var presentationRating: Double = 0 // 1-5
     var comment: String = ""
+    var ownerReply: String? = nil
+    var ownerRepliedAt: Date? = nil
     var createdAt: Date = Date()
 
     var averageRating: Double {

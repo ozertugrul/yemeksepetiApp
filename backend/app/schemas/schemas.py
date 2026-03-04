@@ -188,6 +188,65 @@ class OrderOut(CamelModel):
     created_at: Optional[datetime] = None
 
 
+class OrderReviewCreate(CamelModel):
+    speed_rating: float = Field(..., ge=1, le=5)
+    taste_rating: float = Field(..., ge=1, le=5)
+    presentation_rating: float = Field(..., ge=1, le=5)
+    comment: str = ""
+
+
+class OrderReviewReply(CamelModel):
+    reply: str
+
+
+class OrderReviewOut(CamelModel):
+    id: str
+    order_id: str
+    restaurant_id: str
+    user_id: str
+    user_display_name: Optional[str] = None
+    speed_rating: float
+    taste_rating: float
+    presentation_rating: float
+    average_rating: float
+    comment: str = ""
+    owner_reply: Optional[str] = None
+    owner_replied_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+# ── Coupon ───────────────────────────────────────────────────────────────────
+
+class CouponUpsert(CamelModel):
+    id: Optional[str] = None
+    restaurant_id: Optional[str] = None
+    code: str
+    description: str = ""
+    discount_amount: float = Field(0, ge=0)
+    discount_percent: float = Field(0, ge=0, le=100)
+    minimum_order_amount: float = Field(0, ge=0)
+    expiry_date: Optional[datetime] = None
+    is_active: bool = True
+    is_public: bool = False
+    city: Optional[str] = None
+
+
+class CouponOut(CamelModel):
+    id: str
+    restaurant_id: Optional[str] = None
+    code: str
+    description: str = ""
+    discount_amount: float = 0
+    discount_percent: float = 0
+    minimum_order_amount: float = 0
+    expiry_date: Optional[datetime] = None
+    is_active: bool = True
+    is_public: bool = False
+    city: Optional[str] = None
+    restaurant_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
 # ── Recommendation ────────────────────────────────────────────────────────────
 
 class RecommendationQuery(CamelModel):
@@ -204,6 +263,30 @@ class MenuItemRecommendation(CamelModel):
 class RecommendationOut(CamelModel):
     query: str
     results: List[MenuItemRecommendation]
+
+
+# ── Unified Search ───────────────────────────────────────────────────────────
+
+class SearchResultEntity(CamelModel):
+    id: str
+    entity_type: str                      # "store" | "menu"
+    title: str
+    subtitle: Optional[str] = None
+    restaurant_id: Optional[str] = None
+    restaurant_name: Optional[str] = None
+    image_url: Optional[str] = None
+    price: Optional[float] = None
+    rating: Optional[float] = None
+    score: float
+
+
+class UnifiedSearchOut(CamelModel):
+    query: str
+    stores: List[SearchResultEntity] = []
+    menu_items: List[SearchResultEntity] = []
+    similar_menu_items: List[SearchResultEntity] = []
+    next_offset: Optional[int] = None
+    has_more: bool = False
 
 
 # ── CF (Collaborative Filtering) Öneri ────────────────────────────────────────

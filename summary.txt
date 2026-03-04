@@ -8,7 +8,7 @@ Bu proje, çok rollü bir yemek sipariş ekosistemi sunar:
 - Mobil istemci: iOS (SwiftUI)
 - Backend API: FastAPI (Python)
 - Kimlik doğrulama: Firebase Authentication (ID Token)
-- Uygulama verisi: PostgreSQL (Supabase)
+- Uygulama verisi: PostgreSQL (Local Docker)
 - Opsiyonel öneri sistemi: pgvector + sentence-transformers
 
 Ana hedef:
@@ -32,16 +32,16 @@ Ana hedef:
 2.2 Backend
 - FastAPI + Uvicorn
 - SQLAlchemy Async + asyncpg
-- PostgreSQL (Supabase)
+- PostgreSQL (Local Docker)
 - pgvector
 - sentence-transformers (all-MiniLM-L6-v2), torch CPU
 - pydantic / pydantic-settings
 - firebase-admin (token doğrulama + user yönetimi)
 
 2.3 Dağıtım
-- Koyeb/benzeri ortama uygun Dockerfile
-- API base URL mobilde sabit:
-  https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1
+- Docker tabanlı local çalışma
+- API base URL (local):
+  http://127.0.0.1:8000/api/v1
 
 
 ============================================================

@@ -1,14 +1,73 @@
 import SwiftUI
+import UIKit
 
 // MARK: - OwnerOrdersView
 
 struct OwnerOrdersView: View {
     let restaurant: Restaurant
-    let orders: [Order]              // injected from StoreDashboardView (live)
+    @Binding var orders: [Order]              // injected from StoreDashboardView (live)
     @ObservedObject var viewModel: AppViewModel
 
     @State private var selectedFilter: OrderFilter = .pending
     @State private var errorMessage: String?
+    @State private var statusUpdatingOrderIds: Set<String> = []
+    @State private var cancelDecisionOrderIds: Set<String> = []
+    @State private var pendingOwnerAction: PendingOwnerAction?
+    @State private var lastObservedPendingCount: Int = 0
+    @State private var toastMessage: String?
+    @State private var toastDismissWorkItem: DispatchWorkItem?
+
+    private enum PendingOwnerAction: Identifiable {
+        case status(order: Order, next: OrderStatus)
+        case cancelDecision(order: Order, approve: Bool)
+
+        var id: String {
+            switch self {
+            case .status(let order, let next):
+                return "status-\(order.id)-\(next.rawValue)"
+            case .cancelDecision(let order, let approve):
+                return "cancel-decision-\(order.id)-\(approve)"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .status:
+                return "Durum Değişikliği"
+            case .cancelDecision:
+                return "İptal Talebi Kararı"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .status(_, let next):
+                return "Sipariş durumu '\(next.displayName)' olarak güncellenecek. Emin misiniz?"
+            case .cancelDecision(_, let approve):
+                return approve
+                    ? "Sipariş iptal edilecek. Emin misiniz?"
+                    : "İptal talebi reddedilecek. Emin misiniz?"
+            }
+        }
+
+        var confirmButtonTitle: String {
+            switch self {
+            case .status:
+                return "Evet, Güncelle"
+            case .cancelDecision(_, let approve):
+                return approve ? "Evet, İptal Et" : "Evet, Reddet"
+            }
+        }
+
+        var confirmRole: ButtonRole? {
+            switch self {
+            case .cancelDecision(_, let approve):
+                return approve ? .destructive : nil
+            default:
+                return nil
+            }
+        }
+    }
 
     enum OrderFilter: String, CaseIterable {
         case pending       = "Yeni"
@@ -16,20 +75,75 @@ struct OwnerOrdersView: View {
         case active        = "Aktif"
         case completed     = "Tamamlandı"
         case all           = "Tümü"
+
+        var systemImage: String {
+            switch self {
+            case .pending: return "clock.badge.exclamationmark"
+            case .cancelRequest: return "exclamationmark.triangle"
+            case .active: return "bolt"
+            case .completed: return "checkmark.seal"
+            case .all: return "line.3.horizontal.decrease.circle"
+            }
+        }
+    }
+
+    private var sortedOrders: [Order] {
+        orders.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
     }
 
     private var filteredOrders: [Order] {
+        func statusPriority(_ status: OrderStatus) -> Int {
+            switch status {
+            case .accepted: return 0
+            case .preparing: return 1
+            case .onTheWay: return 2
+            case .pending: return 3
+            case .rejected: return 4
+            case .cancelled: return 5
+            case .completed: return 6
+            }
+        }
+
+        func byPriority(_ list: [Order]) -> [Order] {
+            list.sorted { lhs, rhs in
+                let lp = statusPriority(lhs.status)
+                let rp = statusPriority(rhs.status)
+                if lp == rp {
+                    if lhs.createdAt == rhs.createdAt {
+                        return lhs.updatedAt > rhs.updatedAt
+                    }
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return lp < rp
+            }
+        }
+
+        func byReverseChronological(_ list: [Order]) -> [Order] {
+            list.sorted { lhs, rhs in
+                if lhs.updatedAt == rhs.updatedAt {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return lhs.updatedAt > rhs.updatedAt
+            }
+        }
+
         switch selectedFilter {
-        case .pending:       return orders.filter { $0.status == .pending }
-        case .cancelRequest: return orders.filter { $0.cancelRequested }
-        case .active:        return orders.filter { [.accepted, .preparing, .onTheWay].contains($0.status) }
-        case .completed:     return orders.filter { [.completed, .rejected, .cancelled].contains($0.status) }
-        case .all:           return orders
+        case .pending:       return byPriority(sortedOrders.filter { $0.status == .pending })
+        case .cancelRequest: return byPriority(sortedOrders.filter { $0.cancelRequested })
+        case .active:        return byPriority(sortedOrders.filter { [.accepted, .preparing, .onTheWay].contains($0.status) })
+        case .completed:     return byReverseChronological(sortedOrders.filter { [.completed, .rejected, .cancelled].contains($0.status) })
+        case .all:           return byPriority(sortedOrders)
         }
     }
 
     private var pendingCount: Int       { orders.filter { $0.status == .pending }.count }
     private var cancelRequestCount: Int { orders.filter { $0.cancelRequested }.count }
+    private var activeCount: Int        { orders.filter { [.accepted, .preparing, .onTheWay].contains($0.status) }.count }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,14 +155,17 @@ struct OwnerOrdersView: View {
                             withAnimation(.easeInOut(duration: 0.2)) { selectedFilter = filter }
                         } label: {
                             HStack(spacing: 4) {
+                                Image(systemName: filter.systemImage)
+                                    .font(.caption)
                                 Text(filter.rawValue)
                                 let badge = filter == .pending ? pendingCount
-                                           : filter == .cancelRequest ? cancelRequestCount : 0
+                                           : filter == .cancelRequest ? cancelRequestCount
+                                           : filter == .active ? activeCount : 0
                                 if badge > 0 {
                                     Text("\(badge)")
                                         .font(.caption2).fontWeight(.bold)
                                         .foregroundColor(.white).padding(4)
-                                        .background(filter == .cancelRequest ? Color.orange : Color.red)
+                                        .background(filter == .cancelRequest ? Color.orange : (filter == .active ? Color.blue : Color.red))
                                         .clipShape(Circle())
                                 }
                             }
@@ -79,9 +196,16 @@ struct OwnerOrdersView: View {
                     LazyVStack(spacing: 10) {
                         ForEach(filteredOrders) { order in
                             OwnerOrderCard(order: order) { newStatus in
-                                updateStatus(order: order, status: newStatus)
+                                confirmStatusChange(order: order, status: newStatus)
                             } onHandleCancelRequest: { approve in
-                                handleCancelRequest(order: order, approve: approve)
+                                confirmCancelDecision(order: order, approve: approve)
+                            }
+                            .opacity(isProcessing(orderId: order.id) ? 0.65 : 1)
+                            .overlay(alignment: .topTrailing) {
+                                if isProcessing(orderId: order.id) {
+                                    ProgressView()
+                                        .padding(8)
+                                }
                             }
                             // Force full card redraw when status or cancel request changes
                             .id("\(order.id)-\(order.status.rawValue)-\(order.cancelRequested)")
@@ -95,20 +219,158 @@ struct OwnerOrdersView: View {
         .alert("Hata", isPresented: .constant(errorMessage != nil)) {
             Button("Tamam") { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
+        .onAppear {
+            lastObservedPendingCount = pendingCount
+        }
+        .onChange(of: pendingCount) { newValue in
+            if selectedFilter == .active && newValue > lastObservedPendingCount {
+                notifyIncomingOrder()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedFilter = .pending
+                }
+            }
+            lastObservedPendingCount = newValue
+        }
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                Text(toastMessage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Color.orange.opacity(0.96))
+                    .clipShape(Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
+            }
+        }
+        .alert(item: $pendingOwnerAction) { action in
+            Alert(
+                title: Text(action.title),
+                message: Text(action.message),
+                primaryButton: .default(Text(action.confirmButtonTitle), action: {
+                    executePendingAction(action)
+                }),
+                secondaryButton: .cancel(Text("Vazgeç"))
+            )
+        }
+    }
+
+    private func confirmStatusChange(order: Order, status: OrderStatus) {
+        pendingOwnerAction = .status(order: order, next: status)
+    }
+
+    private func confirmCancelDecision(order: Order, approve: Bool) {
+        pendingOwnerAction = .cancelDecision(order: order, approve: approve)
+    }
+
+    private func executePendingAction(_ action: PendingOwnerAction) {
+        switch action {
+        case .status(let order, let next):
+            updateStatus(order: order, status: next)
+        case .cancelDecision(let order, let approve):
+            handleCancelRequest(order: order, approve: approve)
+        }
+    }
+
+    private func notifyIncomingOrder() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            toastMessage = "Yeni sipariş geldi"
+        }
+
+        toastDismissWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                toastMessage = nil
+            }
+        }
+        toastDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
+    }
+
+    private func isProcessing(orderId: String) -> Bool {
+        statusUpdatingOrderIds.contains(orderId) || cancelDecisionOrderIds.contains(orderId)
+    }
+
+    private func patchOrder(orderId: String, mutate: (inout Order) -> Void) {
+        guard let index = orders.firstIndex(where: { $0.id == orderId }) else { return }
+        mutate(&orders[index])
+    }
+
+    private func mergeServerOrder(_ updated: Order) {
+        guard let index = orders.firstIndex(where: { $0.id == updated.id }) else { return }
+        orders[index] = updated
     }
 
     private func updateStatus(order: Order, status: OrderStatus) {
-        viewModel.orderService.updateOrderStatus(orderId: order.id, status: status) { error in
-            if let error { errorMessage = error.localizedDescription }
-            if status == .completed {
-                viewModel.orderService.incrementSuccessfulOrders(restaurantId: restaurant.id)
+        guard !isProcessing(orderId: order.id) else { return }
+        statusUpdatingOrderIds.insert(order.id)
+        let previous = order
+
+        let isLastPendingResolution = order.status == .pending
+            && [.accepted, .preparing, .onTheWay, .rejected].contains(status)
+            && pendingCount <= 1
+        let shouldAutoFocusActive = isLastPendingResolution
+
+        if shouldAutoFocusActive {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedFilter = .active
+            }
+        }
+
+        patchOrder(orderId: order.id) { item in
+            item.status = status
+            item.updatedAt = Date()
+            if status == .cancelled || status == .completed || status == .rejected {
+                item.cancelRequested = false
+            }
+        }
+
+        viewModel.orderService.updateOrderStatus(orderId: order.id, status: status) { result in
+            statusUpdatingOrderIds.remove(order.id)
+            switch result {
+            case .success(let updated):
+                mergeServerOrder(updated)
+                if status == .completed {
+                    viewModel.orderService.incrementSuccessfulOrders(restaurantId: restaurant.id)
+                }
+            case .failure(let error):
+                patchOrder(orderId: order.id) { item in
+                    item = previous
+                }
+                errorMessage = error.localizedDescription
             }
         }
     }
 
     private func handleCancelRequest(order: Order, approve: Bool) {
-        viewModel.orderService.handleCancelRequest(orderId: order.id, approve: approve) { error in
-            if let error { errorMessage = error.localizedDescription }
+        guard !isProcessing(orderId: order.id) else { return }
+        cancelDecisionOrderIds.insert(order.id)
+        let previous = order
+
+        patchOrder(orderId: order.id) { item in
+            item.cancelRequested = false
+            if approve {
+                item.status = .cancelled
+            }
+            item.updatedAt = Date()
+        }
+
+        viewModel.orderService.handleCancelRequest(orderId: order.id, approve: approve) { result in
+            cancelDecisionOrderIds.remove(order.id)
+            switch result {
+            case .success(let updated):
+                mergeServerOrder(updated)
+            case .failure(let error):
+                patchOrder(orderId: order.id) { item in
+                    item = previous
+                }
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

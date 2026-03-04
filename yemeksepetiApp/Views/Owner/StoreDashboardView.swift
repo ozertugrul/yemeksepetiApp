@@ -32,6 +32,7 @@ struct StoreDashboardView: View {
     @State private var isLoading = true
     @State private var selectedTab: OwnerTab = .orders
     @State private var showingCreateSheet = false
+    @State private var showingReviewsPanel = false
     // Hoisted here so the listener survives tab switches
     @State private var liveOrders: [Order] = []
     @State private var ordersListenerReg: ListenerRegistration?
@@ -43,33 +44,7 @@ struct StoreDashboardView: View {
                 ProgressView("Yükleniyor...")
                 Spacer()
             } else if let restaurant = Binding($restaurant) {
-                // ── Content ────────────────────────────────────────────
-                Group {
-                    switch selectedTab {
-                    case .orders:
-                        OwnerOrdersView(
-                            restaurant: restaurant.wrappedValue,
-                            orders: liveOrders,
-                            viewModel: viewModel
-                        )
-                    case .menu:
-                        MenuManagementView(restaurant: restaurant, dataService: viewModel.dataService)
-                    case .coupons:
-                        OwnerCouponsView(restaurant: restaurant.wrappedValue, viewModel: viewModel)
-                    case .info:
-                        RestaurantInfoEditView(restaurant: restaurant, dataService: viewModel.dataService)
-                    case .report:
-                        SalesReportView(restaurant: restaurant.wrappedValue, viewModel: viewModel)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    OwnerTabBar(
-                        selectedTab: $selectedTab,
-                        pendingCount: liveOrders.filter { $0.status == .pending }.count,
-                        cancelRequestCount: liveOrders.filter { $0.cancelRequested }.count
-                    )
-                }
+                ownerDashboardContent(restaurant: restaurant)
             } else {
                 // ── No restaurant: create one ───────────────────────────
                 NoRestaurantView(onCreateTapped: { showingCreateSheet = true })
@@ -114,6 +89,85 @@ struct StoreDashboardView: View {
         .onDisappear { ordersListenerReg?.remove() }
     }
 
+    @ViewBuilder
+    private func ownerDashboardContent(restaurant: Binding<Restaurant>) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            currentTabContent(restaurant: restaurant)
+            reviewsOverlay(restaurant: restaurant)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            OwnerTabBar(
+                selectedTab: $selectedTab,
+                pendingCount: liveOrders.filter { $0.status == .pending }.count,
+                cancelRequestCount: liveOrders.filter { $0.cancelRequested }.count
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func currentTabContent(restaurant: Binding<Restaurant>) -> some View {
+        switch selectedTab {
+        case .orders:
+            OwnerOrdersView(
+                restaurant: restaurant.wrappedValue,
+                orders: $liveOrders,
+                viewModel: viewModel
+            )
+        case .menu:
+            MenuManagementView(restaurant: restaurant, dataService: viewModel.dataService)
+        case .coupons:
+            OwnerCouponsView(restaurant: restaurant.wrappedValue, viewModel: viewModel)
+        case .info:
+            RestaurantInfoEditView(restaurant: restaurant, dataService: viewModel.dataService)
+        case .report:
+            SalesReportView(restaurant: restaurant.wrappedValue, viewModel: viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func reviewsOverlay(restaurant: Binding<Restaurant>) -> some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if showingReviewsPanel {
+                OwnerReviewsFloatingPanel(
+                    restaurant: restaurant.wrappedValue,
+                    viewModel: viewModel,
+                    onClose: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingReviewsPanel = false
+                        }
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingReviewsPanel.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.bubble")
+                    Text("Yorumlar")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundColor(.orange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+                )
+                .cornerRadius(10)
+                .shadow(color: .black.opacity(0.08), radius: 5, x: 0, y: 2)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.trailing, 12)
+        .padding(.bottom, 84)
+    }
+
     private func loadRestaurant() {
         isLoading = true
         // GET /restaurants/my — token üzerinden doğrudan sahip restoranı döndürür.
@@ -128,6 +182,43 @@ struct StoreDashboardView: View {
                 liveOrders = orders
             }
         }
+    }
+}
+
+private struct OwnerReviewsFloatingPanel: View {
+    let restaurant: Restaurant
+    @ObservedObject var viewModel: AppViewModel
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Müşteri Yorumları")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            OwnerReviewsView(restaurant: restaurant, viewModel: viewModel)
+        }
+        .frame(width: 340)
+        .frame(maxHeight: 500)
+        .background(Color(.systemBackground))
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color(.systemGray4), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -434,7 +525,7 @@ struct MenuManagementView: View {
     private func friendlySaveErrorMessage(_ error: Error) -> String {
         if let apiError = error as? APIError {
             switch apiError {
-            case .unauthorized:
+            case .unauthorized(_):
                 return "Oturum süreniz dolmuş. Lütfen tekrar giriş yapın."
             case .forbidden:
                 return "Bu mağaza için ürün ekleme yetkiniz yok."
@@ -1052,6 +1143,182 @@ private struct OwnerStatCard: View {
         }
         .padding().frame(maxWidth: .infinity)
         .background(color.opacity(0.08)).cornerRadius(12)
+    }
+}
+
+struct OwnerReviewsView: View {
+    let restaurant: Restaurant
+    @ObservedObject var viewModel: AppViewModel
+
+    @State private var reviews: [OrderReview] = []
+    @State private var isLoading = true
+    @State private var replyingReview: OrderReview?
+    @State private var replyText: String = ""
+    @State private var isSendingReply = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                Spacer()
+                ProgressView("Yorumlar yükleniyor...")
+                Spacer()
+            } else if reviews.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 46))
+                        .foregroundColor(.gray.opacity(0.5))
+                    Text("Henüz yorum yok")
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(reviews) { review in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text((review.userDisplayName ?? "Kullanıcı").isEmpty ? "Kullanıcı" : (review.userDisplayName ?? "Kullanıcı"))
+                                        .font(.subheadline.weight(.semibold))
+                                    Spacer()
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "star.fill").foregroundColor(.orange)
+                                        Text(String(format: "%.1f", review.averageRating))
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                }
+
+                                if !review.comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text(review.comment)
+                                        .font(.subheadline)
+                                }
+
+                                if let ownerReply = review.ownerReply, !ownerReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Yanıtınız")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.orange)
+                                        Text(ownerReply)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(8)
+                                    .background(Color.orange.opacity(0.08))
+                                    .cornerRadius(8)
+                                } else {
+                                    Button {
+                                        replyText = ""
+                                        replyingReview = review
+                                    } label: {
+                                        Label("Yanıtla", systemImage: "arrowshape.turn.up.left")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.orange)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 7)
+                                            .background(Color.orange.opacity(0.1))
+                                            .cornerRadius(8)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(12)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .onAppear { loadReviews() }
+        .refreshable { loadReviews() }
+        .alert("Hata", isPresented: .constant(errorMessage != nil)) {
+            Button("Tamam") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .sheet(item: $replyingReview) { review in
+            NavigationView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Müşteri Yorumu")
+                        .font(.headline)
+                    Text(review.comment.isEmpty ? "(Yorum metni yok)" : review.comment)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+
+                    Text("Tek seferlik yanıt")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    TextEditor(text: $replyText)
+                        .frame(minHeight: 120)
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+
+                    Spacer()
+
+                    Button {
+                        sendReply(review: review)
+                    } label: {
+                        HStack {
+                            if isSendingReply {
+                                ProgressView().tint(.white)
+                            }
+                            Text(isSendingReply ? "Gönderiliyor..." : "Yanıtı Gönder")
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .foregroundColor(.white)
+                        .background(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.orange)
+                        .cornerRadius(12)
+                    }
+                    .disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSendingReply)
+                }
+                .padding()
+                .navigationTitle("Yoruma Yanıt")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Kapat") { replyingReview = nil }
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadReviews() {
+        isLoading = true
+        viewModel.orderService.fetchReviews(restaurantId: restaurant.id) { list in
+            DispatchQueue.main.async {
+                self.reviews = list
+                self.isLoading = false
+            }
+        }
+    }
+
+    private func sendReply(review: OrderReview) {
+        let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isSendingReply = true
+        viewModel.orderService.replyToReview(restaurantId: restaurant.id, reviewId: review.id, reply: trimmed) { error in
+            DispatchQueue.main.async {
+                self.isSendingReply = false
+                if let error {
+                    self.errorMessage = error.localizedDescription
+                    return
+                }
+                self.replyingReview = nil
+                self.loadReviews()
+            }
+        }
     }
 }
 

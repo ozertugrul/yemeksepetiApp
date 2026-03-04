@@ -65,6 +65,16 @@ huggingface/
 ds/
 ds_refined/
 
+# Generated outputs / local exports
+backend/scripts/output/
+
+# Database backups and dumps
+backups/
+backend/backups/
+*.dump
+*.sql
+!backend/migrations/*.sql
+
 # ── Local one-off scripts (may contain sensitive data) ────────────────────────
 scripts/_*.py
 backend/scripts/_*.py

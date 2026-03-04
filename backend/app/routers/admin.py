@@ -3,8 +3,6 @@
 """
 from __future__ import annotations
 
-import json
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -14,8 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import func as sql_func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser as FirebaseUser, require_role
-from app.core.auth import hash_password as _hash_password
+from app.core.auth import AuthenticatedUser, hash_password, require_role
 from app.core.database import get_db
 from app.models.orm_models import OrderORM, RestaurantORM, UserORM
 from app.repositories.sql_repos import SQLRestaurantRepository, SQLUserRepository
@@ -51,7 +48,7 @@ def _restaurant_schema(r) -> RestaurantOut:
 @router.get("/users", response_model=List[UserOut])
 async def list_all_users(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     repo = SQLUserRepository(db)
     users = await repo.get_all()
@@ -75,7 +72,7 @@ async def list_users_paged(
     role: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     if role and role not in ("user", "storeOwner", "admin"):
         raise HTTPException(status_code=422, detail=f"Geçersiz rol filtresi: {role!r}")
@@ -115,25 +112,23 @@ class AdminUserCreate(BaseModel):
 async def create_user(
     body: AdminUserCreate,
     db: AsyncSession = Depends(get_db),
-    _admin: FirebaseUser = Depends(require_role("admin")),
+    _admin: AuthenticatedUser = Depends(require_role("admin")),
 ):
     if body.role not in ("user", "storeOwner", "admin"):
         raise HTTPException(status_code=422, detail=f"Geçersiz rol: {body.role!r}")
 
-    # Duplicate e-posta kontrolü
-    dup = await db.execute(sa_select(UserORM.id).where(UserORM.email == body.email))
-    if dup.scalar_one_or_none():
+    existing = await db.execute(sa_select(UserORM).where(UserORM.email == body.email.lower().strip()))
+    if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Bu e-posta zaten kayıtlı.")
 
-    import uuid
-    uid = str(uuid.uuid4())
+    # PostgreSQL'e kaydet
     repo = SQLUserRepository(db)
     u = await repo.upsert({
-        "id": uid,
-        "email": body.email,
+        "id": str(uuid.uuid4()),
+        "email": body.email.lower().strip(),
+        "password_hash": hash_password(body.password),
         "display_name": body.display_name or "",
         "role": body.role,
-        "password_hash": _hash_password(body.password),
     })
     return _user_schema(u)
 
@@ -145,7 +140,7 @@ async def update_user_role(
     uid: str,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: FirebaseUser = Depends(require_role("admin")),
+    current_user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     if uid == current_user.uid:
         raise HTTPException(status_code=400, detail="Kendi rolünüzü değiştiremezsiniz.")
@@ -206,7 +201,7 @@ async def update_user_role(
 async def delete_user(
     uid: str,
     db: AsyncSession = Depends(get_db),
-    current_user: FirebaseUser = Depends(require_role("admin")),
+    current_user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     if uid == current_user.uid:
         raise HTTPException(status_code=400, detail="Kendinizi silemezsiniz.")
@@ -215,8 +210,6 @@ async def delete_user(
     user = await user_repo.get_by_id(uid)
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
-
-    # Firebase yoktu — direkt DB işlemleri:
 
     # Restoranı varsa: FK kısıtı nedeniyle kullanıcı silinemez.
     # Restoranı sahipsizleştir + pasife al — sadece gerçekten son sahipse.
@@ -269,7 +262,7 @@ async def delete_user(
 @router.get("/restaurants", response_model=List[RestaurantOut])
 async def list_all_restaurants(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     repo = SQLRestaurantRepository(db)
     restaurants = await repo.get_all()
@@ -294,7 +287,7 @@ async def list_restaurants_paged(
     cuisine: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     """Sayfalı + filtrelenmiş restoran listesi (admin)."""
     repo = SQLRestaurantRepository(db)
@@ -324,7 +317,7 @@ async def list_restaurants_paged(
 async def toggle_restaurant_active(
     restaurant_id: str,
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     repo = SQLRestaurantRepository(db)
     r = await repo.get_by_id(restaurant_id)
@@ -339,7 +332,7 @@ async def toggle_restaurant_active(
 @router.get("/restaurants/distinct-cities", response_model=List[str])
 async def distinct_restaurant_cities(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     """Veritabanındaki tüm benzersiz restoran şehirlerini döndürür."""
     from sqlalchemy import distinct as sa_distinct
@@ -354,7 +347,7 @@ async def distinct_restaurant_cities(
 @router.get("/restaurants/distinct-cuisines", response_model=List[str])
 async def distinct_restaurant_cuisines(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     """Veritabanındaki tüm benzersiz mutfak türlerini döndürür."""
     from sqlalchemy import distinct as sa_distinct
@@ -377,7 +370,7 @@ async def assign_managed_restaurant(
     uid: str,
     body: ManagedRestaurantBody,
     db: AsyncSession = Depends(get_db),
-    _admin: FirebaseUser = Depends(require_role("admin")),
+    _admin: AuthenticatedUser = Depends(require_role("admin")),
 ):
     """
     Bir kullanıcıya ortak sahip olarak mevcut bir restoran atar.
@@ -414,7 +407,7 @@ async def assign_managed_restaurant(
 @router.get("/stats")
 async def get_stats(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ) -> Dict[str, Any]:
     """Gerçek zamanlı admin istatistikleri."""
     # Kullanıcı sayıları (role'e göre grupla)

@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 /// Thin adapter layer — routes all calls to the SQL API services.
-/// FirebaseFirestore has been fully removed.
+/// Legacy realtime backend kaldırıldı.
 ///
 /// @MainActor ensures all published-property mutations happen on the main thread,
 /// eliminating the need for DispatchQueue.main.async boilerplate throughout.

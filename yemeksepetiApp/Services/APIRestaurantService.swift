@@ -132,9 +132,10 @@ struct APIRestaurantsPage: Decodable {
 // MARK: - RestaurantAPIService
 
 /// FastAPI üzerinden restoran işlemleri.
-/// APIConfig.useSQLBackend = false ise DataService (Firestore) kullanılır.
+/// Tüm çağrılar API katmanı üzerinden çalışır.
 struct RestaurantAPIService {
     private let client = APIClient.shared
+    private static let detailCache = RestaurantDetailCache()
 
     func fetchActive(city: String? = nil) async throws -> [Restaurant] {
         var items: [URLQueryItem] = []
@@ -144,8 +145,30 @@ struct RestaurantAPIService {
     }
 
     func fetchDetail(id: String) async throws -> Restaurant {
-        let r = try await client.get(APIRestaurant.self, path: "/restaurants/\(id)")
-        return r.toRestaurant()
+        if let cached = await Self.detailCache.cachedValue(for: id) {
+            return cached
+        }
+
+        if let inFlightTask = await Self.detailCache.inFlightTask(for: id) {
+            return try await inFlightTask.value
+        }
+
+        let task = Task<Restaurant, Error> {
+            let response = try await client.get(APIRestaurant.self, path: "/restaurants/\(id)")
+            let value = response.toRestaurant()
+            await Self.detailCache.save(value, for: id)
+            return value
+        }
+
+        await Self.detailCache.setInFlightTask(task, for: id)
+        do {
+            let value = try await task.value
+            await Self.detailCache.clearInFlightTask(for: id)
+            return value
+        } catch {
+            await Self.detailCache.clearInFlightTask(for: id)
+            throw error
+        }
     }
 
     func fetchMyRestaurant() async throws -> Restaurant {
@@ -197,13 +220,46 @@ struct RestaurantAPIService {
         let api = try await client.put(APIRestaurant.self,
                                        path: "/restaurants/\(restaurant.id)",
                                        encodable: RestaurantBody(from: restaurant))
-        return api.toRestaurant()
+        let updated = api.toRestaurant()
+        await Self.detailCache.save(updated, for: updated.id)
+        return updated
     }
 
     func upsertMenuItem(restaurantId: String, item: MenuItem) async throws {
         _ = try await client.post(APIMenuItem.self,
                                   path: "/restaurants/\(restaurantId)/menu",
                                   encodable: MenuItemBody(from: item, restaurantId: restaurantId))
+    }
+}
+
+private actor RestaurantDetailCache {
+    private let ttl: TimeInterval = 120
+    private var values: [String: (value: Restaurant, savedAt: Date)] = [:]
+    private var inFlight: [String: Task<Restaurant, Error>] = [:]
+
+    func cachedValue(for id: String) -> Restaurant? {
+        guard let entry = values[id] else { return nil }
+        guard Date().timeIntervalSince(entry.savedAt) <= ttl else {
+            values[id] = nil
+            return nil
+        }
+        return entry.value
+    }
+
+    func save(_ value: Restaurant, for id: String) {
+        values[id] = (value: value, savedAt: Date())
+    }
+
+    func inFlightTask(for id: String) -> Task<Restaurant, Error>? {
+        inFlight[id]
+    }
+
+    func setInFlightTask(_ task: Task<Restaurant, Error>, for id: String) {
+        inFlight[id] = task
+    }
+
+    func clearInFlightTask(for id: String) {
+        inFlight[id] = nil
     }
 }
 

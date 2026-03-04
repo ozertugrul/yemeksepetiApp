@@ -144,6 +144,39 @@ struct APIDeliveryAddress: Decodable {
     }
 }
 
+struct APIOrderReviewOut: Decodable {
+    var id: String
+    var orderId: String
+    var restaurantId: String
+    var userId: String
+    var userDisplayName: String?
+    var speedRating: Double
+    var tasteRating: Double
+    var presentationRating: Double
+    var averageRating: Double
+    var comment: String
+    var ownerReply: String?
+    var ownerRepliedAt: Date?
+    var createdAt: Date?
+
+    func toOrderReview() -> OrderReview {
+        OrderReview(
+            id: id,
+            orderId: orderId,
+            restaurantId: restaurantId,
+            userId: userId,
+            userDisplayName: userDisplayName,
+            speedRating: speedRating,
+            tasteRating: tasteRating,
+            presentationRating: presentationRating,
+            comment: comment,
+            ownerReply: ownerReply,
+            ownerRepliedAt: ownerRepliedAt,
+            createdAt: createdAt ?? Date()
+        )
+    }
+}
+
 /// POST /orders request body
 private struct OrderCreateBody: Encodable {
     var restaurantId: String
@@ -171,6 +204,17 @@ private struct DeliveryAddressBody: Encodable {
     var phone: String
     var latitude: Double?
     var longitude: Double?
+}
+
+private struct ReviewCreateBody: Encodable {
+    var speedRating: Double
+    var tasteRating: Double
+    var presentationRating: Double
+    var comment: String
+}
+
+private struct ReviewReplyBody: Encodable {
+    var reply: String
 }
 
 // MARK: - OrderAPIService
@@ -268,5 +312,33 @@ struct OrderAPIService {
             encodable: CancelDecisionBody(approve: approve)
         )
         return api.toOrder()
+    }
+
+    func submitReview(_ review: OrderReview) async throws -> OrderReview {
+        let api = try await client.post(
+            APIOrderReviewOut.self,
+            path: "/orders/\(review.orderId)/review",
+            encodable: ReviewCreateBody(
+                speedRating: review.speedRating,
+                tasteRating: review.tasteRating,
+                presentationRating: review.presentationRating,
+                comment: review.comment
+            )
+        )
+        return api.toOrderReview()
+    }
+
+    func fetchRestaurantReviews(restaurantId: String) async throws -> [OrderReview] {
+        let api = try await client.get([APIOrderReviewOut].self, path: "/restaurants/\(restaurantId)/reviews")
+        return api.map { $0.toOrderReview() }
+    }
+
+    func replyReview(restaurantId: String, reviewId: String, reply: String) async throws -> OrderReview {
+        let api = try await client.post(
+            APIOrderReviewOut.self,
+            path: "/restaurants/\(restaurantId)/reviews/\(reviewId)/reply",
+            encodable: ReviewReplyBody(reply: reply)
+        )
+        return api.toOrderReview()
     }
 }

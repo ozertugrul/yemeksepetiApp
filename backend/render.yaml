@@ -7,10 +7,12 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false          # Render dashboard'dan elle gir (secret)
-      - key: FIREBASE_CREDENTIALS_JSON
+      - key: JWT_SECRET_KEY
         sync: false          # Render dashboard'dan elle gir (secret)
-      - key: FIREBASE_PROJECT_ID
-        value: yemeksepeti-625e2
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "10080"
       - key: USE_SQL_BACKEND
         value: "true"
       - key: USE_EMBEDDINGS

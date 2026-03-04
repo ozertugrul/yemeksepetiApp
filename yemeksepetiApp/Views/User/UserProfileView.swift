@@ -88,12 +88,14 @@ struct UserProfileView: View {
                         .background(Color.red)
                         .cornerRadius(14)
                     }
+                    .buttonStyle(PressScaleButtonStyle(pressedScale: 0.985))
 
                     Text("Yemeksepeti v1.0.0")
                         .font(.caption2).foregroundColor(Color(.tertiaryLabel))
                         .padding(.bottom, 24)
                 }
                 .padding(.horizontal).padding(.top, 16)
+                .animation(AppMotion.standard, value: user?.id ?? "")
             }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -151,6 +153,7 @@ private struct ProfileSection<Content: View>: View {
             .background(Color(.systemBackground))
             .cornerRadius(14)
             .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+            .subtleCardTransition()
         }
     }
 }
@@ -171,6 +174,7 @@ private struct ProfileNavRow<Dest: View>: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
         }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.985))
     }
 }
 

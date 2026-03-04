@@ -151,7 +151,17 @@ struct LoginView: View {
     }
 
     private func signInAnonymously() {
-        dismiss()
+        errorMessage = ""
+        isLoading = true
+        viewModel.authService.signInAnonymously { result in
+            isLoading = false
+            switch result {
+            case .success:
+                dismiss()
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

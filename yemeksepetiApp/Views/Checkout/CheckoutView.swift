@@ -70,6 +70,10 @@ struct CheckoutView: View {
                     confirmButton
                 }
                 .padding(.vertical, 12)
+                .animation(AppMotion.standard, value: isAddressExpanded)
+                .animation(AppMotion.standard, value: selectedPayment)
+                .animation(AppMotion.spring, value: appliedCoupon?.couponId)
+                .animation(AppMotion.quick, value: availableCoupons.count)
             }
             .navigationTitle("Sipariş Özeti")
             .navigationBarTitleDisplayMode(.inline)
@@ -79,6 +83,16 @@ struct CheckoutView: View {
                 }
             }
             .onAppear { loadData() }
+            .onChange(of: cart.total) { _ in
+                let city = viewModel.authService.currentUser?.city
+                viewModel.couponService.fetchApplicableCoupons(
+                    restaurantId: cart.restaurantId ?? "",
+                    cartTotal: cart.total,
+                    city: city?.isEmpty == false ? city : nil
+                ) { fetched in
+                    self.availableCoupons = fetched
+                }
+            }
         }
         .fullScreenCover(item: $placedOrder, onDismiss: {
             if orderCompletedSuccessfully {
@@ -166,6 +180,7 @@ struct CheckoutView: View {
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
+                    .buttonStyle(PressScaleButtonStyle())
 
                     // ── Expandable address list ──
                     if isAddressExpanded {
@@ -216,6 +231,7 @@ struct CheckoutView: View {
                 Label(addresses.isEmpty ? "Adres Ekle" : "Adresleri Yönet", systemImage: "plus.circle")
                     .font(.caption).foregroundColor(.orange)
             }
+            .buttonStyle(PressScaleButtonStyle())
             .padding(.horizontal)
         }
         .padding(.vertical, 12)
@@ -223,6 +239,7 @@ struct CheckoutView: View {
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal)
+        .subtleCardTransition()
         .sheet(isPresented: $showingAddressSheet) {
             if let uid = currentUser?.id {
                 UserAddressesView(viewModel: viewModel)
@@ -351,6 +368,7 @@ struct CheckoutView: View {
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal)
+        .subtleCardTransition()
         .onAppear { setDefaultPayment() }
     }
 
@@ -383,9 +401,28 @@ struct CheckoutView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .buttonStyle(PressScaleButtonStyle())
                 .disabled(couponCodeInput.isEmpty || isValidatingCoupon)
             }
             .padding(.horizontal)
+
+            if !availableCoupons.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Uygun Kuponlar")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(availableCoupons) { coupon in
+                                applicableCouponCard(coupon)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+            }
 
             // Hata mesajı
             if let err = couponError {
@@ -402,39 +439,6 @@ struct CheckoutView: View {
                 .padding(.horizontal)
             }
 
-            // Kullanılabilir public kuponlar (hızlı seçim)
-            if !availableCoupons.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(availableCoupons) { coupon in
-                            let isApplied = appliedCoupon?.couponId == coupon.id
-                            Button {
-                                if isApplied {
-                                    appliedCoupon = nil
-                                } else {
-                                    couponCodeInput = coupon.code
-                                    applyCode()
-                                }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(coupon.code)
-                                        .font(.system(.caption, design: .monospaced)).fontWeight(.bold)
-                                    Text(coupon.discountLabel).font(.caption2)
-                                }
-                                .foregroundColor(isApplied ? .white : .orange)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(isApplied ? Color.orange : Color.orange.opacity(0.1))
-                                .cornerRadius(8)
-                                .overlay(RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.orange.opacity(0.4), lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-
             // Uygulanmış kupon
             if let ac = appliedCoupon {
                 HStack {
@@ -448,6 +452,7 @@ struct CheckoutView: View {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .buttonStyle(PressScaleButtonStyle(pressedScale: 0.94))
                 }
                 .padding(8)
                 .background(Color.green.opacity(0.06))
@@ -460,6 +465,69 @@ struct CheckoutView: View {
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal)
+        .subtleCardTransition()
+    }
+
+    private func applicableCouponCard(_ coupon: Coupon) -> some View {
+        let isApplied = appliedCoupon?.couponId == coupon.id
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(coupon.code)
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(.orange)
+                Spacer()
+                Text(coupon.discountLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.orange)
+                    .cornerRadius(6)
+            }
+
+            if let storeName = coupon.restaurantName, !storeName.isEmpty {
+                Label(storeName, systemImage: "storefront")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Genel Kupon")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let min = coupon.minCartTotal {
+                Text("Min. sepet: ₺\(String(format: "%.0f", min))")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Button {
+                if isApplied {
+                    appliedCoupon = nil
+                } else {
+                    applyCouponDirectly(coupon)
+                }
+            } label: {
+                Text(isApplied ? "Uygulandı" : "Tek Dokunuşla Uygula")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(isApplied ? .secondary : .orange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(isApplied ? Color(.systemGray6) : Color.orange.opacity(0.12))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .frame(width: 220, alignment: .leading)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isApplied ? Color.green.opacity(0.5) : Color.orange.opacity(0.25), lineWidth: 1)
+        )
     }
 
     // ── Note Section ──────────────────────────────────────────────────────
@@ -487,6 +555,7 @@ struct CheckoutView: View {
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal)
+        .subtleCardTransition()
     }
 
     // ── Confirm Button ────────────────────────────────────────────────────
@@ -511,6 +580,7 @@ struct CheckoutView: View {
             .cornerRadius(14)
         }
         .disabled(!canPlaceOrder || isPlacingOrder)
+        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.985))
         .padding(.horizontal)
     }
 
@@ -658,9 +728,32 @@ struct CheckoutView: View {
             isValidatingCoupon = false
             switch result {
             case .success(let coupon):
-                let discount = coupon.calculatedDiscount(for: finalTotal)
+                let discount = coupon.calculatedDiscount(for: cart.total)
                 appliedCoupon = AppliedCoupon(couponId: coupon.id, code: coupon.code, discountAmount: discount)
                 couponCodeInput = ""
+                couponError = nil
+            case .failure(let error):
+                couponError = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyCouponDirectly(_ coupon: Coupon) {
+        guard let user = currentUser else { return }
+        isValidatingCoupon = true
+        couponError = nil
+        viewModel.couponService.validateCoupon(
+            code: coupon.code,
+            restaurantId: cart.restaurantId,
+            cartTotal: cart.total,
+            userId: user.id,
+            alreadyAppliedIds: []
+        ) { result in
+            isValidatingCoupon = false
+            switch result {
+            case .success(let validCoupon):
+                let discount = validCoupon.calculatedDiscount(for: cart.total)
+                appliedCoupon = AppliedCoupon(couponId: validCoupon.id, code: validCoupon.code, discountAmount: discount)
             case .failure(let error):
                 couponError = error.localizedDescription
             }
@@ -814,6 +907,7 @@ private struct AddressSelectionRow: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
     }
 }
 
@@ -853,6 +947,7 @@ private struct PaymentOptionRow: View {
             .opacity(isDisabled ? 0.5 : 1)
         }
         .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
         .disabled(isDisabled)
     }
 }

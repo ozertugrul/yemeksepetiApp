@@ -1,15 +1,29 @@
 import Foundation
 
 extension Notification.Name {
-    static let apiUnauthorized = Notification.Name("apiUnauthorized")
-    static let apiForbidden = Notification.Name("apiForbidden")
+    nonisolated static let apiUnauthorized = Notification.Name("apiUnauthorized")
+    nonisolated static let apiForbidden = Notification.Name("apiForbidden")
 }
 
 // MARK: - APIConfigEDbw2ed$JV#RhFT
 
 enum APIConfig {
-    //static let baseURL = "https://massive-dalila-ertu-0c50a20b.koyeb.app/api/v1"
-    static let baseURL = "http://88.224.106.3:8000/api/v1"
+    private nonisolated static let defaultDockerHostBaseURL = "http://88.224.106.3:8000/api/v1"
+
+    nonisolated static var baseURL: String {
+        if let env = ProcessInfo.processInfo.environment["API_BASE_URL"], !env.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return normalizedBaseURL(env)
+        }
+
+        return defaultDockerHostBaseURL
+    }
+
+    private nonisolated static func normalizedBaseURL(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        if value.hasSuffix("/api/v1") { return value }
+        return value + "/api/v1"
+    }
 
     static var useRecommendations: Bool {
         ProcessInfo.processInfo.environment["USE_RECOMMENDATIONS"] != "false"
@@ -20,7 +34,7 @@ enum APIConfig {
 
 enum APIError: Error, LocalizedError {
     case invalidURL
-    case unauthorized
+    case unauthorized(message: String?)
     case forbidden
     case notFound
     case serverError(Int, String)
@@ -30,7 +44,11 @@ enum APIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:          return "Geçersiz URL"
-        case .unauthorized:        return "Oturum süreniz dolmuş, lütfen tekrar giriş yapın."
+        case .unauthorized(let message):
+            if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return message
+            }
+            return "Oturum süreniz dolmuş, lütfen tekrar giriş yapın."
         case .forbidden:           return "Bu işlem için yetkiniz yok."
         case .notFound:            return "İçerik bulunamadı."
         case .serverError(let c, let m): return "Sunucu hatası (\(c)): \(m)"
@@ -42,16 +60,20 @@ enum APIError: Error, LocalizedError {
 
 // MARK: - APIClient
 
-/// Merkezi HTTP istemcisi — her istekte Firebase ID token ekler.
+/// Merkezi HTTP istemcisi — varsa Keychain JWT access token'ını ekler.
 actor APIClient {
     static let shared = APIClient()
 
     private let session: URLSession
     private let decoder: JSONDecoder
 
+    private struct ErrorDetailResponse: Decodable {
+        let detail: String?
+    }
+
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 40   // Koyeb cold-start ≤ 40s
+        config.timeoutIntervalForRequest = 40
         self.session = URLSession(configuration: config)
         self.decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -105,8 +127,12 @@ actor APIClient {
                 throw APIError.decodingFailed(error)
             }
         case 401:
-            NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
-            throw APIError.unauthorized
+            let detail = decodeErrorDetail(from: data)
+            let isAuthEndpoint = path.hasPrefix("/auth/")
+            if !isAuthEndpoint {
+                NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            }
+            throw APIError.unauthorized(message: detail)
         case 403:
             NotificationCenter.default.post(name: .apiForbidden, object: nil)
             throw APIError.forbidden
@@ -122,8 +148,11 @@ actor APIClient {
         let (_, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { return }
         if http.statusCode == 401 {
-            NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
-            throw APIError.unauthorized
+            let isAuthEndpoint = path.hasPrefix("/auth/")
+            if !isAuthEndpoint {
+                NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            }
+            throw APIError.unauthorized(message: nil)
         }
         if http.statusCode == 403 {
             NotificationCenter.default.post(name: .apiForbidden, object: nil)
@@ -162,5 +191,18 @@ actor APIClient {
 
     func delete(path: String) async throws {
         try await executeVoid(method: "DELETE", path: path)
+    }
+
+    private nonisolated func decodeErrorDetail(from data: Data) -> String? {
+        if let parsed = try? JSONDecoder().decode(ErrorDetailResponse.self, from: data),
+           let detail = parsed.detail,
+           !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return detail
+        }
+        let fallback = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fallback, !fallback.isEmpty {
+            return fallback
+        }
+        return nil
     }
 }

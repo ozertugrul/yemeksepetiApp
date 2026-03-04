@@ -48,6 +48,7 @@ class AuthService: ObservableObject {
     @Published var errorMessage: String?
 
     private let userAPI = UserAPIService()
+    private let guestIdPrefix = "guest-"
     private var apiUnauthorizedObserver: NSObjectProtocol?
     private var apiForbiddenObserver: NSObjectProtocol?
 
@@ -78,9 +79,11 @@ class AuthService: ObservableObject {
         Task {
             do {
                 let profile = try await userAPI.fetchMyProfile()
+                let profileId = profile.id
+                let profileEmail = profile.email ?? ""
                 let appUser = AppUser(
-                    id: profile.id ?? "",
-                    email: profile.email ?? "",
+                    id: profileId,
+                    email: profileEmail,
                     role: Self.mapAPIRole(profile.role),
                     managedRestaurantId: profile.managedRestaurantId,
                     fullName: profile.displayName,
@@ -171,9 +174,11 @@ class AuthService: ObservableObject {
     private func fetchAndUpdateProfile() async -> AppUser? {
         do {
             let profile = try await userAPI.fetchMyProfile()
+            let profileId = profile.id
+            let profileEmail = profile.email ?? self.user?.email ?? ""
             let appUser = AppUser(
-                id: profile.id ?? self.user?.id ?? "",
-                email: profile.email ?? self.user?.email ?? "",
+                id: profileId,
+                email: profileEmail,
                 role: Self.mapAPIRole(profile.role),
                 managedRestaurantId: profile.managedRestaurantId,
                 fullName: profile.displayName,
@@ -193,7 +198,7 @@ class AuthService: ObservableObject {
     var currentUser: AppUser? { user }
     var userRole: UserRole { user?.role ?? .user }
     var isAuthenticated: Bool { user != nil }
-    var isGuest: Bool { false }
+    var isGuest: Bool { user?.id.hasPrefix(guestIdPrefix) == true }
 
     static func mapAPIRole(_ raw: String?) -> UserRole {
         switch raw {
@@ -276,9 +281,19 @@ class AuthService: ObservableObject {
         return Date(timeIntervalSince1970: iat)
     }
 
-    // Misafir girişi kaldırıldı
     func signInAnonymously(completion: @escaping (Result<AppUser, Error>) -> Void) {
-        completion(.failure(NSError(domain: "AuthService", code: -99,
-            userInfo: [NSLocalizedDescriptionKey: "Misafir girişi kaldırıldı."])))
+        isLoading = true
+        Task { @MainActor in
+            let guestUser = AppUser(
+                id: "\(guestIdPrefix)\(UUID().uuidString)",
+                email: "guest@yemeksepeti.local",
+                role: .user,
+                managedRestaurantId: nil,
+                fullName: "Misafir"
+            )
+            self.user = guestUser
+            self.isLoading = false
+            completion(.success(guestUser))
+        }
     }
 }

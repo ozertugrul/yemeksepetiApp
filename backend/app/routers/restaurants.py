@@ -3,20 +3,23 @@
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, distinct
-from app.models.orm_models import RestaurantORM
+from sqlalchemy import select, distinct, func
+from app.models.orm_models import OrderORM, OrderReviewORM, RestaurantORM, UserORM
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import FirebaseUser, get_current_user, get_optional_user, require_role
+from app.core.auth import AuthenticatedUser, get_current_user, get_optional_user, require_role
 from app.core.database import get_db
 from app.repositories.sql_repos import SQLMenuItemRepository, SQLRestaurantRepository, SQLUserRepository  # noqa: F401 (SQLUserRepository co-owner için)
 from app.schemas.schemas import (
     CamelModel,
     MenuItemCreate, MenuItemOut,
+    OrderReviewOut,
+    OrderReviewReply,
     RestaurantCreate, RestaurantOut,
 )
 
@@ -34,6 +37,61 @@ from app.services.embedding_service import EmbeddingService
 
 router = APIRouter(prefix="/restaurants", tags=["Restaurants"])
 embedding_service = EmbeddingService()
+
+PROFANITY_PATTERNS = [
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bamk\b",
+        r"\baq\b",
+        r"\bo[\.\s]*ç\b",
+        r"\boc\b",
+        r"orospu",
+        r"piç",
+        r"siktir",
+        r"yarrak",
+        r"göt",
+        r"ibne",
+    )
+]
+
+
+def _is_blank_or_whitespace(text: Optional[str]) -> bool:
+    return not text or not text.strip()
+
+
+def _contains_profanity(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    normalized = text.lower().strip()
+    return any(p.search(normalized) for p in PROFANITY_PATTERNS)
+
+
+def _should_hide_comment_for_public(text: Optional[str]) -> bool:
+    return _is_blank_or_whitespace(text) or _contains_profanity(text)
+
+
+def _mask_identity(value: Optional[str]) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "Kullanıcı"
+    if len(text) == 1:
+        return "*"
+    if len(text) == 2:
+        return f"{text[0]}*"
+    return f"{text[0]}*****{text[-1]}"
+
+
+async def _successful_order_counts(db: AsyncSession, restaurant_ids: List[str]) -> dict[str, int]:
+    if not restaurant_ids:
+        return {}
+
+    result = await db.execute(
+        select(OrderORM.restaurant_id, func.count(OrderORM.id))
+        .where(OrderORM.restaurant_id.in_(restaurant_ids))
+        .where(func.lower(func.trim(OrderORM.status)).in_(["delivered", "completed"]))
+        .group_by(OrderORM.restaurant_id)
+    )
+    return {rid: int(count or 0) for rid, count in result.all()}
 
 
 def _orm_menu_to_schema(item) -> MenuItemOut:
@@ -53,7 +111,7 @@ def _orm_menu_to_schema(item) -> MenuItemOut:
     )
 
 
-def _orm_to_schema(r, include_menu: bool = False) -> RestaurantOut:
+def _orm_to_schema(r, include_menu: bool = False, successful_order_count: Optional[int] = None) -> RestaurantOut:
     menu = [_orm_menu_to_schema(m) for m in (r.menu_items or [])] if include_menu else []
     return RestaurantOut(
         id=r.id,
@@ -69,10 +127,28 @@ def _orm_to_schema(r, include_menu: bool = False) -> RestaurantOut:
         city=r.city,
         allows_pickup=r.allows_pickup,
         allows_cash_on_delivery=r.allows_cash_on_del,
-        successful_order_count=r.successful_order_count or 0,
+        successful_order_count=(r.successful_order_count or 0) if successful_order_count is None else successful_order_count,
         average_rating=r.average_rating or 0,
         rating_count=r.rating_count or 0,
         menu=menu,
+        created_at=r.created_at,
+    )
+
+
+def _review_to_schema(r: OrderReviewORM, user_display_name: Optional[str] = None) -> OrderReviewOut:
+    return OrderReviewOut(
+        id=r.id,
+        order_id=r.order_id,
+        restaurant_id=r.restaurant_id,
+        user_id=r.user_id,
+        user_display_name=user_display_name,
+        speed_rating=r.speed_rating,
+        taste_rating=r.taste_rating,
+        presentation_rating=r.presentation_rating,
+        average_rating=r.average_rating,
+        comment=r.comment or "",
+        owner_reply=r.owner_reply,
+        owner_replied_at=r.owner_replied_at,
         created_at=r.created_at,
     )
 
@@ -83,26 +159,30 @@ def _orm_to_schema(r, include_menu: bool = False) -> RestaurantOut:
 async def list_restaurants(
     city: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+    _user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ):
     repo = SQLRestaurantRepository(db)
+    user_repo = SQLUserRepository(db)
     restaurants = await repo.get_all_active(city=city)
-    return [_orm_to_schema(r) for r in restaurants]
+    counts = await _successful_order_counts(db, [r.id for r in restaurants])
+    return [_orm_to_schema(r, successful_order_count=counts.get(r.id, 0)) for r in restaurants]
 
 
 @router.get("/admin/all", response_model=List[RestaurantOut])
 async def list_all_restaurants_admin(
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     repo = SQLRestaurantRepository(db)
-    return [_orm_to_schema(r) for r in await repo.get_all()]
+    restaurants = await repo.get_all()
+    counts = await _successful_order_counts(db, [r.id for r in restaurants])
+    return [_orm_to_schema(r, successful_order_count=counts.get(r.id, 0)) for r in restaurants]
 
 
 @router.get("/my", response_model=RestaurantOut)
 async def get_my_restaurant(
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(require_role("storeOwner", "admin")),
+    user: AuthenticatedUser = Depends(require_role("storeOwner", "admin")),
 ):
     """
     Sahip veya ortak sahip olunan restoranı döndürür.
@@ -116,13 +196,15 @@ async def get_my_restaurant(
     if db_user and db_user.managed_restaurant_id:
         r = await repo.get_by_id(db_user.managed_restaurant_id, include_menu=True)
         if r:
-            return _orm_to_schema(r, include_menu=True)
+            counts = await _successful_order_counts(db, [r.id])
+            return _orm_to_schema(r, include_menu=True, successful_order_count=counts.get(r.id, 0))
 
     # Fallback: primary owner_id ile ara
     r = await repo.get_by_owner(user.uid, include_menu=True)
     if not r:
         raise HTTPException(status_code=404, detail="Restoranınız bulunamadı.")
-    return _orm_to_schema(r, include_menu=True)
+    counts = await _successful_order_counts(db, [r.id])
+    return _orm_to_schema(r, include_menu=True, successful_order_count=counts.get(r.id, 0))
 
 
 @router.get("/paged", response_model=RestaurantsPage)
@@ -133,7 +215,7 @@ async def list_restaurants_paged(
     city: Optional[str] = Query(None),
     cuisine: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+    _user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ):
     """Sayfalanmış aktif restoranlar — arama + şehir + mutfak filtresi."""
     repo = SQLRestaurantRepository(db)
@@ -143,7 +225,8 @@ async def list_restaurants_paged(
     rows = await repo.get_page_filtered(
         offset=offset, limit=limit, search=search, city=city, cuisine=cuisine, is_active=True
     )
-    items = [_orm_to_schema(r) for r in rows]
+    counts = await _successful_order_counts(db, [r.id for r in rows])
+    items = [_orm_to_schema(r, successful_order_count=counts.get(r.id, 0)) for r in rows]
     next_off = offset + len(items)
     has_more = next_off < total
     return RestaurantsPage(
@@ -160,7 +243,7 @@ async def list_restaurants_paged(
 async def list_distinct_cuisines(
     city: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+    _user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ):
     """Aktif restoranların benzersiz mutfak türleri."""
     query = (
@@ -181,13 +264,98 @@ async def list_distinct_cuisines(
 async def get_restaurant(
     restaurant_id: str,
     db: AsyncSession = Depends(get_db),
-    _user: Optional[FirebaseUser] = Depends(get_optional_user),
+    _user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ):
     repo = SQLRestaurantRepository(db)
     r = await repo.get_by_id(restaurant_id, include_menu=True)
     if not r:
         raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
-    return _orm_to_schema(r, include_menu=True)
+    counts = await _successful_order_counts(db, [r.id])
+    return _orm_to_schema(r, include_menu=True, successful_order_count=counts.get(r.id, 0))
+
+
+@router.get("/{restaurant_id}/reviews", response_model=List[OrderReviewOut])
+async def list_restaurant_reviews(
+    restaurant_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[AuthenticatedUser] = Depends(get_optional_user),
+):
+    can_view_all_comments = False
+    if _user:
+        if _user.role == "admin":
+            can_view_all_comments = True
+        elif _user.role == "storeOwner":
+            rest_repo = SQLRestaurantRepository(db)
+            user_repo = SQLUserRepository(db)
+            restaurant = await rest_repo.get_by_id(restaurant_id)
+            if restaurant:
+                db_user = await user_repo.get_by_id(_user.uid)
+                is_primary_owner = restaurant.owner_id == _user.uid
+                is_co_owner = bool(db_user and db_user.managed_restaurant_id == restaurant_id)
+                can_view_all_comments = is_primary_owner or is_co_owner
+
+    result = await db.execute(
+        select(OrderReviewORM, UserORM.display_name, UserORM.email)
+        .join(UserORM, UserORM.id == OrderReviewORM.user_id)
+        .where(OrderReviewORM.restaurant_id == restaurant_id)
+        .order_by(OrderReviewORM.created_at.desc())
+    )
+    rows = result.all()
+    output: List[OrderReviewOut] = []
+    for review, display_name, email in rows:
+        if not can_view_all_comments and _should_hide_comment_for_public(review.comment):
+            continue
+        if can_view_all_comments:
+            visible_name = (display_name or "").strip() or (email or "Kullanıcı")
+        else:
+            source = (display_name or "").strip() or (email or "Kullanıcı")
+            visible_name = _mask_identity(source)
+        output.append(_review_to_schema(review, user_display_name=visible_name))
+    return output
+
+
+@router.post("/{restaurant_id}/reviews/{review_id}/reply", response_model=OrderReviewOut)
+async def reply_restaurant_review(
+    restaurant_id: str,
+    review_id: str,
+    body: OrderReviewReply,
+    db: AsyncSession = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_role("storeOwner", "admin")),
+):
+    rest_repo = SQLRestaurantRepository(db)
+    user_repo = SQLUserRepository(db)
+    restaurant = await rest_repo.get_by_id(restaurant_id)
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
+
+    if user.role != "admin":
+        db_user = await user_repo.get_by_id(user.uid)
+        is_primary_owner = restaurant.owner_id == user.uid
+        is_co_owner = bool(db_user and db_user.managed_restaurant_id == restaurant_id)
+        if not is_primary_owner and not is_co_owner:
+            raise HTTPException(status_code=403, detail="Bu yorumu yanıtlama yetkiniz yok.")
+
+    review_result = await db.execute(
+        select(OrderReviewORM).where(
+            OrderReviewORM.id == review_id,
+            OrderReviewORM.restaurant_id == restaurant_id,
+        )
+    )
+    review = review_result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Yorum bulunamadı.")
+    if review.owner_reply and review.owner_reply.strip():
+        raise HTTPException(status_code=409, detail="Bu yoruma zaten cevap verildi.")
+
+    reply = body.reply.strip()
+    if not reply:
+        raise HTTPException(status_code=422, detail="Cevap metni boş olamaz.")
+
+    from datetime import datetime, timezone
+    review.owner_reply = reply
+    review.owner_replied_at = datetime.now(timezone.utc)
+    await db.flush()
+    return _review_to_schema(review)
 
 
 # ── Oluştur / Güncelle ────────────────────────────────────────────────────────
@@ -196,7 +364,7 @@ async def get_restaurant(
 async def create_restaurant(
     body: RestaurantCreate,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     # Sadece storeOwner veya admin mağaza açabilir
     if user.role not in ("storeOwner", "admin"):
@@ -218,7 +386,19 @@ async def create_restaurant(
 
     data = body.model_dump(by_alias=False)
     data.setdefault("id", str(uuid.uuid4()))
-    actual_owner_id = data.get("owner_id") or user.uid
+
+    if user.role == "admin":
+        requested_owner_id = (data.get("owner_id") or "").strip()
+        if requested_owner_id:
+            owner_user = await user_repo.get_by_id(requested_owner_id)
+            if not owner_user:
+                raise HTTPException(status_code=404, detail="Owner kullanıcı bulunamadı.")
+            actual_owner_id = requested_owner_id
+        else:
+            actual_owner_id = user.uid
+    else:
+        actual_owner_id = user.uid
+
     data["owner_id"] = actual_owner_id
     data["allows_cash_on_del"] = data.pop("allows_cash_on_delivery", False)
     r = await repo.create(data)
@@ -226,7 +406,6 @@ async def create_restaurant(
     # managed_restaurant_id'yi sahip kullanıcıda da güncelle.
     # Bu olmadan co-owner kontrolü primary owner'ı bulamaz → yanlış kapatma.
     try:
-        user_repo = SQLUserRepository(db)
         await user_repo.update(actual_owner_id, {"managed_restaurant_id": r.id})
     except Exception:
         pass  # Non-critical — restoranı döndür
@@ -239,7 +418,7 @@ async def update_restaurant(
     restaurant_id: str,
     body: RestaurantCreate,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     repo = SQLRestaurantRepository(db)
     user_repo = SQLUserRepository(db)
@@ -273,7 +452,7 @@ async def add_menu_item(
     restaurant_id: str,
     body: MenuItemCreate,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     rest_repo = SQLRestaurantRepository(db)
     user_repo = SQLUserRepository(db)
@@ -319,7 +498,7 @@ async def add_menu_item(
 async def delete_restaurant(
     restaurant_id: str,
     db: AsyncSession = Depends(get_db),
-    _user: FirebaseUser = Depends(require_role("admin")),
+    _user: AuthenticatedUser = Depends(require_role("admin")),
 ):
     repo = SQLRestaurantRepository(db)
     deleted = await repo.delete(restaurant_id)

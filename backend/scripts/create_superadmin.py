@@ -12,30 +12,19 @@ Giriş bilgileri:
 """
 import asyncio
 import os
-import json
+import uuid
 from pathlib import Path
 
 import asyncpg
+import bcrypt
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials, auth as firebase_auth
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 ADMIN_EMAIL    = "admin@yemeksepeti.com"
-ADMIN_PASSWORD = "admin1"   # Firebase min 6 karakter gerektirir
+ADMIN_PASSWORD = "admin1"
 ADMIN_NAME     = "Süper Admin"
 ADMIN_ROLE     = "admin"
-
-
-# ─── Firebase init ────────────────────────────────────────────────────────────
-def init_firebase():
-    cred_json = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
-    if not cred_json:
-        raise SystemExit("FIREBASE_CREDENTIALS_JSON env var eksik")
-    cred = credentials.Certificate(json.loads(cred_json))
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
 
 
 # ─── asyncpg bağlantısı ───────────────────────────────────────────────────────
@@ -54,48 +43,29 @@ async def get_conn() -> asyncpg.Connection:
     )
 
 
-# ─── Firebase kullanıcısı oluştur / güncelle ──────────────────────────────────
-def ensure_firebase_user() -> str:
-    """Kullanıcı zaten varsa UID'ini döner, yoksa oluşturur."""
-    try:
-        user = firebase_auth.get_user_by_email(ADMIN_EMAIL)
-        print(f"[Firebase] Kullanıcı zaten mevcut → {user.uid}")
-        # Şifreyi güncelle (admin olsun diye)
-        firebase_auth.update_user(user.uid, password=ADMIN_PASSWORD, display_name=ADMIN_NAME)
-        return user.uid
-    except firebase_auth.UserNotFoundError:
-        user = firebase_auth.create_user(
-            email=ADMIN_EMAIL,
-            password=ADMIN_PASSWORD,
-            display_name=ADMIN_NAME,
-            email_verified=True,
-        )
-        print(f"[Firebase] Yeni kullanıcı oluşturuldu → {user.uid}")
-        return user.uid
-
-
 # ─── PostgreSQL'e kaydet ──────────────────────────────────────────────────────
-async def upsert_pg_user(conn: asyncpg.Connection, uid: str):
-    # Önce email ile var mı diye bak (farklı UID'de kayıtlı olabilir)
-    existing = await conn.fetchrow("SELECT id FROM users WHERE email=$1", ADMIN_EMAIL)
-    if existing and existing["id"] != uid:
-        # Eski kaydı sil, Firebase UID ile yeniden ekle
-        await conn.execute("DELETE FROM users WHERE email=$1", ADMIN_EMAIL)
-        print(f"[PostgreSQL] Eski kayıt temizlendi → {existing['id']}")
+async def upsert_pg_user(conn: asyncpg.Connection):
+    email = ADMIN_EMAIL.lower().strip()
+    password_hash = bcrypt.hashpw(ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    existing = await conn.fetchrow("SELECT id FROM users WHERE email=$1", email)
+    uid = existing["id"] if existing else str(uuid.uuid4())
 
     await conn.execute(
         """
-        INSERT INTO users (id, email, display_name, role, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
         ON CONFLICT (id) DO UPDATE
-          SET email        = EXCLUDED.email,
-              display_name = EXCLUDED.display_name,
-              role         = EXCLUDED.role,
-              updated_at   = NOW()
+          SET email         = EXCLUDED.email,
+              password_hash = EXCLUDED.password_hash,
+              display_name  = EXCLUDED.display_name,
+              role          = EXCLUDED.role,
+              updated_at    = NOW()
         """,
-        uid, ADMIN_EMAIL, ADMIN_NAME, ADMIN_ROLE,
+        uid, email, password_hash, ADMIN_NAME, ADMIN_ROLE,
     )
     print(f"[PostgreSQL] users tablosuna yazıldı → id={uid}, role={ADMIN_ROLE}")
+    return uid
 
 
 # ─── Ana akış ────────────────────────────────────────────────────────────────
@@ -104,11 +74,8 @@ async def main():
     print("  Superadmin oluşturucu")
     print("=" * 55)
 
-    init_firebase()
-    uid = ensure_firebase_user()
-
     conn = await get_conn()
-    await upsert_pg_user(conn, uid)
+    uid = await upsert_pg_user(conn)
     await conn.close()
 
     print()

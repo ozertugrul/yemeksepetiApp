@@ -2,13 +2,22 @@
 -- Supabase SQL Editor'a yapıştır ve çalıştır.
 -- Idempotent — birden çok kez çalıştırmak güvenli (IF NOT EXISTS).
 
+-- Local Supabase image bazı extension işlemlerinde supabase_admin rolünü bekleyebilir.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+    CREATE ROLE supabase_admin WITH LOGIN SUPERUSER;
+  END IF;
+END $$;
+
 -- 1. pgvector uzantısını etkinleştir
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 2. Kullanıcılar
 CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,          -- Firebase UID
+  id            TEXT PRIMARY KEY,
     email         TEXT UNIQUE NOT NULL,
+  password_hash TEXT,
     display_name  TEXT,
     role          TEXT NOT NULL DEFAULT 'user', -- 'user' | 'storeOwner' | 'admin'
     city          TEXT,

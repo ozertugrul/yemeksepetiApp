@@ -1,9 +1,9 @@
 import Foundation
 import Combine
 
-// MARK: - ListenerRegistration (replaces FirebaseFirestore.ListenerRegistration)
+// MARK: - ListenerRegistration (polling tabanlı)
 
-/// Drop-in replacement for Firestore's ListenerRegistration.
+/// Polling tabanlı listener kaydı.
 /// Schedules a polling Timer on RunLoop.main so it fires regardless of which
 /// thread created this object.
 final class ListenerRegistration {
@@ -31,6 +31,8 @@ final class ListenerRegistration {
 @MainActor
 final class OrderService: ObservableObject {
     private let orderAPI = OrderAPIService()
+    private let userOrdersPollInterval: TimeInterval = 3
+    private let ownerOrdersPollInterval: TimeInterval = 2
 
     // MARK: - Place Order
 
@@ -55,7 +57,7 @@ final class OrderService: ObservableObject {
     }
 
     func listenUserOrders(userId: String, onUpdate: @escaping ([Order]) -> Void) -> ListenerRegistration {
-        ListenerRegistration(interval: 20) { [weak self] in
+        ListenerRegistration(interval: userOrdersPollInterval) { [weak self] in
             guard let self else { return }
             Task {
                 let orders = (try? await self.orderAPI.fetchMyOrders()) ?? []
@@ -74,7 +76,7 @@ final class OrderService: ObservableObject {
     }
 
     func listenRestaurantOrders(restaurantId: String, onUpdate: @escaping ([Order]) -> Void) -> ListenerRegistration {
-        ListenerRegistration(interval: 15) { [weak self] in
+        ListenerRegistration(interval: ownerOrdersPollInterval) { [weak self] in
             guard let self else { return }
             Task {
                 let orders = (try? await self.orderAPI.fetchRestaurantOrders(restaurantId: restaurantId)) ?? []
@@ -85,12 +87,23 @@ final class OrderService: ObservableObject {
 
     // MARK: - Status Updates
 
-    func updateOrderStatus(orderId: String, status: OrderStatus, completion: @escaping (Error?) -> Void) {
+    func updateOrderStatus(orderId: String, status: OrderStatus, completion: @escaping (Result<Order, Error>) -> Void) {
         Task {
             do {
-                _ = try await orderAPI.updateStatus(orderId: orderId, status: status)
-                completion(nil)
+                let updated = try await orderAPI.updateStatus(orderId: orderId, status: status)
+                completion(.success(updated))
             } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func updateOrderStatus(orderId: String, status: OrderStatus, completion: @escaping (Error?) -> Void) {
+        updateOrderStatus(orderId: orderId, status: status) { result in
+            switch result {
+            case .success:
+                completion(nil)
+            case .failure(let error):
                 completion(error)
             }
         }
@@ -100,12 +113,23 @@ final class OrderService: ObservableObject {
         updateOrderStatus(orderId: orderId, status: .cancelled, completion: completion)
     }
 
-    func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Error?) -> Void) {
+    func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Result<Order, Error>) -> Void) {
         Task {
             do {
-                _ = try await orderAPI.decideCancellation(orderId: orderId, approve: approve)
-                completion(nil)
+                let updated = try await orderAPI.decideCancellation(orderId: orderId, approve: approve)
+                completion(.success(updated))
             } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func handleCancelRequest(orderId: String, approve: Bool, completion: @escaping (Error?) -> Void) {
+        handleCancelRequest(orderId: orderId, approve: approve) { result in
+            switch result {
+            case .success:
+                completion(nil)
+            case .failure(let error):
                 completion(error)
             }
         }
@@ -137,15 +161,33 @@ final class OrderService: ObservableObject {
         }
     }
 
-    // MARK: - Reviews (backend endpoint şimdilik yok)
-
     func submitReview(_ review: OrderReview, restaurant: Restaurant, completion: @escaping (Error?) -> Void) {
-        // Değlendirme endpoint'i henüz aktif değil — sessizce başarılı say.
-        completion(nil)
+        Task {
+            do {
+                _ = try await orderAPI.submitReview(review)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
     }
 
     func fetchReviews(restaurantId: String, completion: @escaping ([OrderReview]) -> Void) {
-        completion([])
+        Task {
+            let reviews = (try? await orderAPI.fetchRestaurantReviews(restaurantId: restaurantId)) ?? []
+            completion(reviews)
+        }
+    }
+
+    func replyToReview(restaurantId: String, reviewId: String, reply: String, completion: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                _ = try await orderAPI.replyReview(restaurantId: restaurantId, reviewId: reviewId, reply: reply)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
     }
 
     // MARK: - No-op helpers kept for API compatibility

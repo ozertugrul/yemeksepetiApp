@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -614,7 +613,11 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+/* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCSwiftPackageProductDependency section */
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 99818D1B2F43AABA00B5BA65 /* Project object */;
 }

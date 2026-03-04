@@ -1,9 +1,8 @@
 """
-JWT tabanlı kimlik doğrulama — Firebase bağımlılığı tamamen kaldırıldı.
-Şifreler bcrypt ile hashlenir. Access token HS256 JWT'dir.
-"""
-from __future__ import annotations
+JWT tabanlı kimlik doğrulama.
 
+iOS tarafı her istekte Authorization: Bearer <access_token> header'ı gönderir.
+"""
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -21,104 +20,120 @@ from app.core.database import get_db
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-# ── Model ──────────────────────────────────────────────────────────────────────
+def _jwt_secret() -> str:
+    settings = get_settings()
+    secret = (settings.jwt_secret or settings.jwt_secret_key or "").strip()
+    if not secret or secret == "change-this-jwt-secret" or len(secret) < 32:
+        raise RuntimeError("JWT secret güvenli şekilde yapılandırılmamış.")
+    return secret
 
-class CurrentUser:
-    """Doğrulanmış kullanıcı. Tüm router'larda kullanılır."""
 
-    def __init__(self, uid: str, email: Optional[str], role: str = "user"):
+class AuthenticatedUser:
+    def __init__(self, uid: str, email: Optional[str], role: Optional[str] = None):
         self.uid = uid
         self.email = email
-        self.role = role
+        self.role = role or "user"
 
 
-# Geriye dönük uyumluluk
-FirebaseUser = CurrentUser
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-# ── Password helpers ───────────────────────────────────────────────────────────
-
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds=12)).decode()
-
-
-def verify_password(plain: str, hashed: str) -> bool:
+def verify_password(password: str, password_hash: str) -> bool:
     try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except Exception:
         return False
 
 
-# ── JWT helpers ────────────────────────────────────────────────────────────────
-
 def create_access_token(uid: str, email: str, role: str) -> str:
     settings = get_settings()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_expire_days)
+    try:
+        secret = _jwt_secret()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Kimlik doğrulama servisi geçici olarak kullanılamıyor.",
+        ) from exc
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": uid,
         "email": email,
         "role": role,
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
 
 
-def _decode_token(token: str) -> dict:
+def _decode_access_token(token: str) -> dict:
     settings = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        secret = _jwt_secret()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Kimlik doğrulama servisi geçici olarak kullanılamıyor.",
+        )
+    try:
+        return jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token süresi dolmuş, lütfen tekrar giriş yapın.",
+            detail="Oturum süresi doldu. Lütfen tekrar giriş yapın.",
         )
-    except jwt.InvalidTokenError as exc:
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Geçersiz token: {exc}",
+            detail="Geçersiz erişim token'ı.",
         )
 
 
-# ── FastAPI dependencies ───────────────────────────────────────────────────────
-
-async def get_identity_only(
+async def get_bearer_identity(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-) -> CurrentUser:
-    """Sadece token doğrular, DB'ye gitmez. /users/me bootstrap için."""
+) -> AuthenticatedUser:
+    """
+    Bearer token'ı JWT ile doğrula.
+    DB rol kontrolü yapmaz; bootstrap endpoint'lerde kullanılabilir.
+    """
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header eksik",
         )
-    payload = _decode_token(credentials.credentials)
-    return CurrentUser(
-        uid=payload.get("sub", ""),
-        email=payload.get("email"),
-        role=payload.get("role", "user"),
-    )
+    decoded = _decode_access_token(credentials.credentials)
 
-# Geriye dönük uyumluluk alias
-get_firebase_identity = get_identity_only
+    uid = decoded.get("sub")
+    email = decoded.get("email")
+    role = decoded.get("role") or "user"
+    if not uid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token içinde kullanıcı bilgisi eksik.",
+        )
+
+    return AuthenticatedUser(uid=uid, email=email, role=role)
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    identity: AuthenticatedUser = Depends(get_bearer_identity),
     db: AsyncSession = Depends(get_db),
-) -> CurrentUser:
-    """JWT doğrula → rolü DB'den oku."""
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header eksik",
-        )
-    payload = _decode_token(credentials.credentials)
-    uid: str = payload.get("sub", "")
-    email: Optional[str] = payload.get("email")
+) -> AuthenticatedUser:
+    """
+    Bearer token'ı JWT ile doğrula, ardından rolü PostgreSQL'den oku.
+    Geçersiz/eksik token → 401.
+    """
+    uid = identity.uid
+    email = identity.email
 
+    # Rolü her zaman PostgreSQL'den oku — ORM select() kullan:
+    # text()+named-param yaklaşımı asyncpg'de prepared statement üretiyor,
+    # PgBouncer transaction-mode ile çakışıyor → ORM select saha testiyle daha güvenli.
     from app.models.orm_models import UserORM
     try:
-        result = await db.execute(select(UserORM.role).where(UserORM.id == uid))
+        result = await db.execute(
+            select(UserORM.role).where(UserORM.id == uid)
+        )
     except (TimeoutError, SQLAlchemyError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -130,25 +145,29 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Kullanıcı hesabı bulunamadı.",
         )
-    return CurrentUser(uid=uid, email=email, role=row)
+    role = row
+
+    return AuthenticatedUser(uid=uid, email=email, role=role)
 
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
-) -> Optional[CurrentUser]:
-    """Public endpoint'ler için — token yoksa None döner."""
+) -> Optional[AuthenticatedUser]:
+    """Public endpoint'ler için — token yoksa None döner, hata fırlatmaz."""
     if not credentials:
         return None
     try:
-        return await get_current_user(credentials, db)
-    except HTTPException:
+        # İlk olarak token doğrulaması yapılır, ardından rol kontrolü uygulanır.
+        identity = await get_bearer_identity(credentials)
+        return await get_current_user(identity, db)
+    except Exception:
         return None
 
 
 def require_role(*roles: str):
     """Role-based access control decorator factory."""
-    async def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    async def _check(user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
         if user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -156,8 +175,3 @@ def require_role(*roles: str):
             )
         return user
     return _check
-
-
-# no-op — Firebase yoktu
-def _init_firebase_app() -> None:
-    pass

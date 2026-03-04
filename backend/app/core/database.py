@@ -12,6 +12,9 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+if not settings.database_url:
+    raise RuntimeError("DATABASE_URL env var eksik. Backend başlatılamıyor.")
+
 
 def _is_transient_db_error(exc: Exception) -> bool:
     if isinstance(
@@ -72,7 +75,7 @@ def _with_pg_bouncer_params(raw_url: str) -> str:
 # - Her request için yeni bağlantı kurulur, bitince kapatılır.
 # - Bağlantı hiç yeniden kullanılmaz → prepared statement çakışması imkânsız.
 # - PgBouncer transaction-mod zaten kısa ömürlü bağlantı için tasarlanmıştır.
-# - Koyeb / Supabase ortamında performance maliyeti ihmal edilebilir.
+# - Local Docker ortamında performance maliyeti ihmal edilebilir.
 engine = create_async_engine(
     _with_pg_bouncer_params(settings.database_url),
     poolclass=NullPool,

@@ -14,13 +14,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import get_settings
 from app.core.database import engine
 from app.models import orm_models  # ORM tablolarını kaydet
-from app.routers import admin, orders, recommendations, restaurants, users
-from app.routers import auth_router as auth
+from app.routers import admin, auth, coupons, orders, recommendations, restaurants, search, users
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+def _parse_cors_origins(raw: str) -> list[str]:
+    origins = [origin.strip() for origin in (raw or "").split(",") if origin.strip()]
+    return origins
 
 
 @asynccontextmanager
@@ -66,10 +70,13 @@ async def asyncpg_exception_handler(_request: Request, _exc: asyncpg.PostgresErr
     )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+allowed_origins = _parse_cors_origins(settings.cors_allow_origins)
+allow_credentials = "*" not in allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Production'da iOS app domain ile sınırla
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -77,12 +84,14 @@ app.add_middleware(
 # ── Router'lar ────────────────────────────────────────────────────────────────
 PREFIX = settings.api_prefix
 
-app.include_router(auth.router, prefix=PREFIX)
 app.include_router(restaurants.router, prefix=PREFIX)
+app.include_router(coupons.router, prefix=PREFIX)
 app.include_router(orders.router, prefix=PREFIX)
 app.include_router(users.router, prefix=PREFIX)
+app.include_router(auth.router, prefix=PREFIX)
 app.include_router(recommendations.router, prefix=PREFIX)
 app.include_router(admin.router, prefix=PREFIX)
+app.include_router(search.router, prefix=PREFIX)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

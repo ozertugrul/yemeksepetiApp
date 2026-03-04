@@ -6,10 +6,12 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser as FirebaseUser, get_current_user, get_identity_only as get_firebase_identity
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.database import get_db
+from app.models.orm_models import UserAddressORM
 from app.repositories.sql_repos import SQLAddressRepository, SQLUserRepository
 from app.schemas.schemas import UserAddressCreate, UserAddressOut, UserOut
 
@@ -21,12 +23,12 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @router.get("/me", response_model=UserOut)
 async def get_me(
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_firebase_identity),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     repo = SQLUserRepository(db)
     u = await repo.get_by_id(user.uid)
     if not u:
-        # Firebase'de kayıtlı ama PostgreSQL'de yok — otomatik oluştur
+        # Token geçerli ama DB'de kullanıcı yoksa otomatik oluştur
         u = await repo.upsert({
             "id": user.uid,
             "email": user.email or f"{user.uid}@unknown.user",
@@ -43,7 +45,7 @@ async def get_me(
 async def update_me(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     allowed = {"display_name", "city", "phone"}
     data = {k: v for k, v in body.items() if k in allowed}
@@ -63,7 +65,7 @@ async def update_me(
 @router.get("/me/addresses", response_model=List[UserAddressOut])
 async def list_addresses(
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     repo = SQLAddressRepository(db)
     addresses = await repo.get_by_user(user.uid)
@@ -74,7 +76,7 @@ async def list_addresses(
 async def create_address(
     body: UserAddressCreate,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     data = body.model_dump(by_alias=False)
     data["user_id"] = user.uid
@@ -95,7 +97,7 @@ async def update_address(
     address_id: str,
     body: UserAddressCreate,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     repo = SQLAddressRepository(db)
     data = body.model_dump(by_alias=False, exclude_unset=True)
@@ -110,9 +112,15 @@ async def update_address(
 async def delete_address(
     address_id: str,
     db: AsyncSession = Depends(get_db),
-    user: FirebaseUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     repo = SQLAddressRepository(db)
+
+    result = await db.execute(select(UserAddressORM).where(UserAddressORM.id == address_id))
+    address = result.scalar_one_or_none()
+    if not address or address.user_id != user.uid:
+        raise HTTPException(status_code=404, detail="Adres bulunamadı.")
+
     deleted = await repo.delete(address_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Adres bulunamadı.")

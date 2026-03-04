@@ -37,6 +37,9 @@ struct HomeView: View {
                 if !needsCityOnboarding { searchHeader }
                 contentArea
             }
+            .animation(AppMotion.standard, value: needsCityOnboarding)
+            .animation(AppMotion.standard, value: restaurantVM.isLoading)
+            .animation(AppMotion.spring, value: restaurantVM.restaurants.count)
             .navigationTitle("Yemeksepeti")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -95,10 +98,16 @@ struct HomeView: View {
 
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundColor(.gray)
-            TextField("Restoran veya mutfak ara...", text: $restaurantVM.searchQuery)
+            TextField("Mağaza veya ürün ara...", text: $viewModel.globalSearchQuery)
                 .textInputAutocapitalization(.never)
-            if !restaurantVM.searchQuery.isEmpty {
-                Button { restaurantVM.searchQuery = "" } label: {
+                .submitLabel(.search)
+                .onSubmit {
+                    let q = viewModel.globalSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard q.count >= 2 else { return }
+                    viewModel.selectedTab = 1
+                }
+            if !viewModel.globalSearchQuery.isEmpty {
+                Button { viewModel.globalSearchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                 }
             }
@@ -144,12 +153,16 @@ struct HomeView: View {
     private var contentArea: some View {
         if needsCityOnboarding {
             cityOnboardingView
+                .subtleCardTransition()
         } else if restaurantVM.isLoading {
             loadingView
+                .subtleCardTransition()
         } else if restaurantVM.restaurants.isEmpty {
             emptyRestaurantsView
+                .subtleCardTransition()
         } else {
             restaurantListView
+                .subtleCardTransition()
         }
     }
 
@@ -172,6 +185,7 @@ struct HomeView: View {
                     .font(.subheadline).foregroundColor(.secondary)
                 Button("Adresi Değiştir") { showingAddressPicker = true }
                     .buttonStyle(.borderedProminent).tint(.orange)
+                    .buttonStyle(PressScaleButtonStyle())
             } else {
                 Text("Restoran bulunamadı").foregroundColor(.secondary)
             }
@@ -195,6 +209,7 @@ struct HomeView: View {
                         RestaurantCard(restaurant: restaurant)
                     }
                     .buttonStyle(.plain)
+                    .subtleCardTransition()
                     .onAppear { restaurantVM.prefetchIfNeeded(currentIndex: index) }
                 }
                 paginationFooter
@@ -216,6 +231,7 @@ struct HomeView: View {
                 .foregroundColor(.orange)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
+                .buttonStyle(PressScaleButtonStyle())
         }
     }
 
@@ -711,15 +727,13 @@ struct RestaurantCard: View {
                 }
 
                 // Successful orders chip
-                if restaurant.successfulOrderCount > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green)
-                        Text("\(restaurant.successfulOrderCount)+ başarılı sipariş")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
+                    Text("\(max(0, restaurant.successfulOrderCount))+ başarılı sipariş")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
             .padding(12)
@@ -944,6 +958,10 @@ struct RestaurantDetailView: View {
     @State private var pendingItem: MenuItem?
     @State private var selectedCategory: String? = nil
     @State private var loadedMenu: [MenuItem] = []
+    @State private var reviews: [OrderReview] = []
+    @State private var reviewsLoading = false
+    @State private var showingReviewsSheet = false
+    @State private var didLoadInitialData = false
 
     private var cart: CartViewModel { viewModel.cart }
 
@@ -983,6 +1001,9 @@ struct RestaurantDetailView: View {
                         // ── Feature badges ──────────────────────────────────
                         featureBadges
 
+                        // ── Reviews entry ───────────────────────────────────
+                        reviewsEntrySection
+
                         // ── Category tabs ────────────────────────────────────
                         if categories.count > 1 {
                             categoryTabs(proxy: proxy)
@@ -1005,7 +1026,11 @@ struct RestaurantDetailView: View {
         }
         .navigationTitle(restaurant.name)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { fetchMenuDetail() }
+        .onAppear {
+            guard !didLoadInitialData else { return }
+            didLoadInitialData = true
+            fetchMenuDetail()
+        }
         .sheet(item: $showingOptionSheet) { item in
             ItemOptionSheet(item: item, restaurant: restaurant, cart: cart) {
                 lastAddedItem = item
@@ -1019,6 +1044,25 @@ struct RestaurantDetailView: View {
         }
         .sheet(isPresented: $showingCart) {
             CartView(cart: cart, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showingReviewsSheet) {
+            if #available(iOS 16.0, *) {
+                RestaurantReviewsSheet(
+                    restaurantName: restaurant.name,
+                    reviews: reviews,
+                    isLoading: reviewsLoading,
+                    onRefresh: { fetchReviews() }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            } else {
+                RestaurantReviewsSheet(
+                    restaurantName: restaurant.name,
+                    reviews: reviews,
+                    isLoading: reviewsLoading,
+                    onRefresh: { fetchReviews() }
+                )
+            }
         }
         .alert("Farklı Mağaza", isPresented: $showingDifferentRestaurantAlert) {
             Button("Sepeti Temizle ve Ekle", role: .destructive) {
@@ -1194,6 +1238,46 @@ struct RestaurantDetailView: View {
         return list
     }
 
+    @ViewBuilder
+    private var reviewsEntrySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Müşteri Yorumları", systemImage: "text.bubble")
+                    .font(.headline.weight(.bold))
+                Spacer()
+                if reviewsLoading {
+                    ProgressView().scaleEffect(0.85)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+
+            Button {
+                showingReviewsSheet = true
+                if reviews.isEmpty && !reviewsLoading {
+                    fetchReviews()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(reviews.isEmpty ? "Yorumları Gör" : "Tüm Yorumları Gör (\(reviews.count))")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundColor(.orange)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
     // MARK: Category Tabs
 
     private func categoryTabs(proxy: ScrollViewProxy) -> some View {
@@ -1305,6 +1389,16 @@ struct RestaurantDetailView: View {
         }
     }
 
+    private func fetchReviews() {
+        reviewsLoading = true
+        viewModel.orderService.fetchReviews(restaurantId: restaurant.id) { list in
+            DispatchQueue.main.async {
+                self.reviews = list
+                self.reviewsLoading = false
+            }
+        }
+    }
+
     private func handleAddToCart(item: MenuItem) {
         if let cartRestId = cart.restaurantId, cartRestId != restaurant.id {
             pendingItem = item
@@ -1328,6 +1422,95 @@ struct RestaurantDetailView: View {
         }
         if !available.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showingSuggested = true }
+        }
+    }
+}
+
+private struct RestaurantReviewsSheet: View {
+    let restaurantName: String
+    let reviews: [OrderReview]
+    let isLoading: Bool
+    let onRefresh: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView("Yorumlar yükleniyor...")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if reviews.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "text.bubble")
+                            .font(.system(size: 42))
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("Henüz yorum yok")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(reviews) { review in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text((review.userDisplayName ?? "Kullanıcı").isEmpty ? "Kullanıcı" : (review.userDisplayName ?? "Kullanıcı"))
+                                            .font(.subheadline.weight(.semibold))
+                                        Spacer()
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "star.fill").foregroundColor(.orange)
+                                            Text(String(format: "%.1f", review.averageRating))
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                    }
+
+                                    if !review.comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text(review.comment)
+                                            .font(.subheadline)
+                                            .foregroundColor(.primary)
+                                    }
+
+                                    if let ownerReply = review.ownerReply, !ownerReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Mağaza Yanıtı")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundColor(.orange)
+                                            Text(ownerReply)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(8)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color.orange.opacity(0.08))
+                                        .cornerRadius(8)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(10)
+                            }
+                        }
+                        .padding(16)
+                    }
+                    .background(Color(.systemGroupedBackground))
+                    .refreshable { onRefresh() }
+                }
+            }
+            .navigationTitle("Yorumlar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Kapat") { dismiss() }
+                }
+            }
+        }
+        .onAppear {
+            if reviews.isEmpty && !isLoading {
+                onRefresh()
+            }
         }
     }
 }

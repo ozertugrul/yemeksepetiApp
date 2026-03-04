@@ -20,11 +20,20 @@ struct UserOrdersView: View {
         case past   = "Geçmiş"
     }
 
+    private var sortedOrders: [Order] {
+        orders.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
     private var activeOrders: [Order] {
-        orders.filter { [.pending, .accepted, .preparing, .onTheWay].contains($0.status) }
+        sortedOrders.filter { [.pending, .accepted, .preparing, .onTheWay].contains($0.status) }
     }
     private var pastOrders: [Order] {
-        orders.filter { [.completed, .rejected, .cancelled].contains($0.status) }
+        sortedOrders.filter { [.completed, .rejected, .cancelled].contains($0.status) }
     }
     private var displayed: [Order] { selectedFilter == .active ? activeOrders : pastOrders }
 
@@ -65,6 +74,7 @@ struct UserOrdersView: View {
                                 onRateTap: { reviewingOrder = order },
                                 onCancelTap: { cancelRequestOrder = order; cancelReasonText = "" }
                             )
+                            .subtleCardTransition()
                             .padding(.horizontal)
                         }
                     }
@@ -72,12 +82,21 @@ struct UserOrdersView: View {
                 }
             }
         }
+        .animation(AppMotion.standard, value: selectedFilter)
+        .animation(AppMotion.spring, value: displayed.count)
+        .animation(AppMotion.quick, value: isLoading)
         .navigationTitle("Siparişlerim")
         .navigationBarTitleDisplayMode(.large)
         .onAppear { startListening() }
         .onDisappear { listenerReg?.remove() }
         .sheet(item: $reviewingOrder) { order in
-            OrderReviewSheet(order: order, viewModel: viewModel) { reviewingOrder = nil }
+            OrderReviewSheet(order: order, viewModel: viewModel) {
+                if let idx = orders.firstIndex(where: { $0.id == order.id }) {
+                    orders[idx].isReviewed = true
+                    orders[idx].updatedAt = Date()
+                }
+                reviewingOrder = nil
+            }
         }
         .sheet(item: $cancelRequestOrder) { order in
             CancelRequestSheet(
@@ -98,8 +117,10 @@ struct UserOrdersView: View {
         isLoading = true
         listenerReg?.remove()
         listenerReg = viewModel.orderService.listenUserOrders(userId: uid) { fetched in
-            orders = fetched
-            isLoading = false
+            withAnimation(AppMotion.standard) {
+                orders = fetched
+                isLoading = false
+            }
         }
     }
 
@@ -114,11 +135,25 @@ struct UserOrdersView: View {
     private func submitCancelRequest(_ order: Order) {
         let reason = cancelReasonText.trimmingCharacters(in: .whitespaces)
         guard !reason.isEmpty else { return }
+
+        let previous = order
+        if let index = orders.firstIndex(where: { $0.id == order.id }) {
+            orders[index].cancelRequested = true
+            orders[index].cancelReason = reason
+            orders[index].cancelRequestedAt = Date()
+            orders[index].updatedAt = Date()
+        }
+
         cancellingOrderId = order.id
         viewModel.orderService.requestCancellation(orderId: order.id, reason: reason) { error in
             cancellingOrderId = nil
             cancelRequestOrder = nil
-            if let error { errorMessage = error.localizedDescription }
+            if let error {
+                if let index = orders.firstIndex(where: { $0.id == previous.id }) {
+                    orders[index] = previous
+                }
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -224,7 +259,9 @@ struct UserOrderCard: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain).disabled(isCancelling)
+                    .buttonStyle(.plain)
+                    .buttonStyle(PressScaleButtonStyle())
+                    .disabled(isCancelling)
                 }
 
                 if order.status == .completed && !order.isReviewed {
@@ -235,6 +272,7 @@ struct UserOrderCard: View {
                             .background(Color.orange).cornerRadius(10)
                     }
                     .buttonStyle(.plain)
+                    .buttonStyle(PressScaleButtonStyle())
                 }
             }
         }
@@ -310,6 +348,7 @@ struct CancelRequestSheet: View {
                     .cornerRadius(14)
                 }
                 .disabled(reason.trimmingCharacters(in: .whitespaces).isEmpty || isSending)
+                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.985))
             }
             .padding()
             .navigationTitle("İptal Talebi")

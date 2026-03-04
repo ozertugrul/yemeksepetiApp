@@ -3,14 +3,18 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # ── PostgreSQL (Supabase) ─────────────────────────────────────
-    database_url: str  # postgresql+asyncpg://user:pass@host:5432/postgres
+    # ── PostgreSQL (Local Docker) ─────────────────────────────────
+    database_url: str = ""  # postgresql+asyncpg://user:pass@host:5432/postgres
 
-    # ── JWT Auth ──────────────────────────────────────────────────
-    jwt_secret: str = "change-me-in-production-use-a-long-random-string"
-    jwt_expire_days: int = 30
+    # ── Auth (JWT) ────────────────────────────────────────────────
+    jwt_secret_key: str = ""
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7
+    anon_key: str = ""
+    service_role_key: str = ""
 
     # ── Feature Flags ─────────────────────────────────────────────
     # 0 = Firestore-only (rollback), 1 = SQL read/write aktif
@@ -33,6 +37,7 @@ class Settings(BaseSettings):
 
     # ── API ───────────────────────────────────────────────────────
     api_prefix: str = "/api/v1"
+    cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
     debug: bool = False
 
 

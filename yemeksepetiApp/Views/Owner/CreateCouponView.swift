@@ -177,9 +177,40 @@ struct CreateCouponView: View {
     // MARK: - Save
 
     private func save() {
-        guard let dv = Double(discountValue), dv > 0 else {
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCode.isEmpty else {
+            errorMessage = "Kupon kodu boş olamaz."; return
+        }
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Kupon başlığı boş olamaz."; return
+        }
+
+        guard let dv = parseDouble(discountValue), dv > 0 else {
             errorMessage = "Geçerli bir indirim değeri girin."; return
         }
+
+        if discountType == .percentage, dv > 100 {
+            errorMessage = "Yüzde indirim 100'den büyük olamaz."; return
+        }
+
+        if !maxDiscountAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           parseDouble(maxDiscountAmount) == nil {
+            errorMessage = "Maksimum indirim alanı geçerli bir sayı olmalı."; return
+        }
+        if !minCartTotal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           parseDouble(minCartTotal) == nil {
+            errorMessage = "Minimum sepet tutarı geçerli bir sayı olmalı."; return
+        }
+        if !maxTotalUsage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           Int(maxTotalUsage.trimmingCharacters(in: .whitespacesAndNewlines)) == nil {
+            errorMessage = "Toplam kullanım limiti tam sayı olmalı."; return
+        }
+        if !maxUsagePerUser.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           Int(maxUsagePerUser.trimmingCharacters(in: .whitespacesAndNewlines)) == nil {
+            errorMessage = "Kullanıcı başına limit tam sayı olmalı."; return
+        }
+
         isSaving = true
         errorMessage = nil
 
@@ -190,17 +221,17 @@ struct CreateCouponView: View {
             discountValue: 0,
             createdBy: createdBy
         )
-        coupon.code             = code.uppercased().trimmingCharacters(in: .whitespaces)
-        coupon.title            = title.trimmingCharacters(in: .whitespaces)
+        coupon.code             = trimmedCode
+        coupon.title            = trimmedTitle
         coupon.description      = description.trimmingCharacters(in: .whitespaces)
         coupon.restaurantId     = restaurantId
         coupon.restaurantName   = restaurantName
         coupon.discountType     = discountType
         coupon.discountValue    = dv
-        coupon.maxDiscountAmount = Double(maxDiscountAmount)
-        coupon.minCartTotal     = Double(minCartTotal)
-        coupon.maxTotalUsage    = Int(maxTotalUsage)
-        coupon.maxUsagePerUser  = Int(maxUsagePerUser)
+        coupon.maxDiscountAmount = parseDouble(maxDiscountAmount)
+        coupon.minCartTotal     = parseDouble(minCartTotal)
+        coupon.maxTotalUsage    = Int(maxTotalUsage.trimmingCharacters(in: .whitespacesAndNewlines))
+        coupon.maxUsagePerUser  = Int(maxUsagePerUser.trimmingCharacters(in: .whitespacesAndNewlines))
         coupon.isPublic         = isPublic
         coupon.city             = restaurantCity
         coupon.isActive         = isActive
@@ -210,15 +241,35 @@ struct CreateCouponView: View {
         if isEditing {
             couponService.updateCoupon(coupon) { error in
                 isSaving = false
-                if let error { errorMessage = error.localizedDescription }
+                if let error { errorMessage = mapCouponError(error) }
                 else { onDone(coupon); dismiss() }
             }
         } else {
             couponService.createCoupon(coupon) { error in
                 isSaving = false
-                if let error { errorMessage = error.localizedDescription }
+                if let error { errorMessage = mapCouponError(error) }
                 else { onDone(coupon); dismiss() }
             }
         }
+    }
+
+    private func parseDouble(_ raw: String) -> Double? {
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard !normalized.isEmpty else { return nil }
+        return Double(normalized)
+    }
+
+    private func mapCouponError(_ error: Error) -> String {
+        if let api = error as? APIError {
+            switch api {
+            case .serverError(_, let message) where !message.isEmpty:
+                return message
+            default:
+                return api.localizedDescription
+            }
+        }
+        return error.localizedDescription
     }
 }
