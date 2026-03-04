@@ -2,8 +2,8 @@
 Superadmin kullanıcısı oluştur.
 
 Giriş bilgileri:
-  E-posta  : admin@yemeksepeti.com
-  Şifre    : admin
+    E-posta  : ADMIN_EMAIL env (default: admin@yemeksepeti.com)
+    Şifre    : ADMIN_PASSWORD env (zorunlu)
   Rol      : admin
 
 Çalıştır:
@@ -21,10 +21,13 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-ADMIN_EMAIL    = "admin@yemeksepeti.com"
-ADMIN_PASSWORD = "admin1"
-ADMIN_NAME     = "Süper Admin"
-ADMIN_ROLE     = "admin"
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@yemeksepeti.com").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
+ADMIN_NAME = os.getenv("ADMIN_NAME", "Süper Admin").strip()
+ADMIN_ROLE = "admin"
+
+if not ADMIN_PASSWORD or len(ADMIN_PASSWORD) < 12:
+    raise SystemExit("ADMIN_PASSWORD env var zorunlu ve en az 12 karakter olmalı.")
 
 
 # ─── asyncpg bağlantısı ───────────────────────────────────────────────────────
@@ -81,7 +84,7 @@ async def main():
     print()
     print("✅ Superadmin hazır!")
     print(f"   E-posta : {ADMIN_EMAIL}")
-    print(f"   Şifre   : {ADMIN_PASSWORD}")
+    print("   Şifre   : [GİZLİ]")
     print(f"   Rol     : {ADMIN_ROLE}")
     print(f"   UID     : {uid}")
 
