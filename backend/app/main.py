@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.request_security import RequestSecurityMiddleware
 from app.models import orm_models  # ORM tablolarını kaydet
 from app.routers import admin, auth, coupons, orders, recommendations, restaurants, search, users
 
@@ -80,6 +81,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestSecurityMiddleware)
 
 # ── Router'lar ────────────────────────────────────────────────────────────────
 PREFIX = settings.api_prefix

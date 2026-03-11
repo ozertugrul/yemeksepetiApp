@@ -94,3 +94,8 @@ Sources/
 
 # Claude rules (internal)
 .claude/
+
+# Local notes / internship documents
+staj_defteri_gun*.txt
+summary.txt
+_5.txt

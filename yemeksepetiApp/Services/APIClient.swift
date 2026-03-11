@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 extension Notification.Name {
     nonisolated static let apiUnauthorized = Notification.Name("apiUnauthorized")
@@ -6,7 +7,7 @@ extension Notification.Name {
     nonisolated static let cartPulseRequested = Notification.Name("cartPulseRequested")
 }
 
-// MARK: - APIConfigEDbw2ed$JV#RhFT
+// MARK: - APIConfig
 
 enum APIConfig {
     private nonisolated static let defaultDockerHostBaseURL = "http://88.224.106.3:8000/api/v1"
@@ -99,10 +100,38 @@ actor APIClient {
 
         if let token = KeychainHelper.loadToken() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let ts = String(Int(Date().timeIntervalSince1970))
+            let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            let bodyHash = sha256Hex(body ?? Data())
+            let pathAndQuery = canonicalPathAndQuery(for: url)
+            let canonical = [method.uppercased(), pathAndQuery, ts, nonce, bodyHash].joined(separator: "\n")
+            let signature = hmacSHA256Hex(message: canonical, key: token)
+
+            req.setValue(ts, forHTTPHeaderField: "X-Req-Ts")
+            req.setValue(nonce, forHTTPHeaderField: "X-Req-Nonce")
+            req.setValue(signature, forHTTPHeaderField: "X-Req-Signature")
         }
 
         req.httpBody = body
         return req
+    }
+
+    private nonisolated func canonicalPathAndQuery(for url: URL) -> String {
+        let path = url.path.isEmpty ? "/" : url.path
+        guard let query = url.query, !query.isEmpty else { return path }
+        return "\(path)?\(query)"
+    }
+
+    private nonisolated func sha256Hex(_ data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private nonisolated func hmacSHA256Hex(message: String, key: String) -> String {
+        let keyData = Data(key.utf8)
+        let symmetricKey = SymmetricKey(data: keyData)
+        let code = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: symmetricKey)
+        return Data(code).map { String(format: "%02x", $0) }.joined()
     }
 
     // ── Execute ───────────────────────────────────────────────────────────────

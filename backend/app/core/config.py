@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
     debug: bool = False
 
+    # ── HTTP Üzerinde Ek Güvenlik Katmanı ───────────────────────
+    enforce_signed_requests: bool = True
+    request_signature_max_skew_seconds: int = 45
+    request_nonce_ttl_seconds: int = 120
+
 
 @lru_cache
 def get_settings() -> Settings:

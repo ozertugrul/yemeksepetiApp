@@ -94,14 +94,6 @@ def invalidate_cf_cache() -> None:
 # ── Collaborative Filtering Service ──────────────────────────────────────────
 
 class CollaborativeFilteringService:
-    """
-    Hafif, saat-bazlı user-based CF motoru.
-
-    Kullanım:
-        cf = CollaborativeFilteringService(db_session)
-        recs = await cf.recommend(user_id="U1", top_n=10)
-    """
-
     def __init__(
         self,
         db: AsyncSession,
